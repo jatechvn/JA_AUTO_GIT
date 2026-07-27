@@ -533,65 +533,74 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 } else {
                   final act = await showDialog<String>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: _c.bgCard,
-                      title: Row(
-                        children: [
-                          const Icon(Icons.account_circle, color: AppConstants.accentGreen),
-                          const SizedBox(width: 8),
-                          Text(
-                            _currentLang == 'vi' ? "Tài khoản GitHub" : "GitHub Account",
-                            style: TextStyle(color: _c.textPrimary),
-                          ),
-                        ],
-                      ),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _currentLang == 'vi' ? "Tài khoản đang đăng nhập:" : "Currently logged in as:",
-                            style: TextStyle(color: _c.textMuted, fontSize: 12),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: AppConstants.accentGreen.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: AppConstants.accentGreen.withOpacity(0.3)),
+                    builder: (ctx) => GlassDialog(
+                      title: _currentLang == 'vi' ? "Tài khoản GitHub" : "GitHub Account",
+                      isDark: widget.themeNotifier.isDark,
+                      width: 480,
+                      height: 250,
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _currentLang == 'vi' ? "Tài khoản đang đăng nhập:" : "Currently logged in as:",
+                              style: TextStyle(color: _c.textMuted, fontSize: 12),
                             ),
-                            child: Row(
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppConstants.accentGreen.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppConstants.accentGreen.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.person, color: AppConstants.accentGreen, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text : "GitHub User",
+                                    style: const TextStyle(color: AppConstants.accentGreen, fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                const Icon(Icons.person, color: AppConstants.accentGreen, size: 18),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, 'cancel'),
+                                  child: Text(_currentLang == 'vi' ? "Đóng" : "Close", style: TextStyle(color: _c.textMuted)),
+                                ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text : "GitHub User",
-                                  style: const TextStyle(color: AppConstants.accentGreen, fontWeight: FontWeight.bold, fontSize: 13),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.amber[800],
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.swap_horiz, size: 14),
+                                  label: Text(_currentLang == 'vi' ? "Đổi Tài Khoản" : "Switch Account"),
+                                  onPressed: () => Navigator.pop(ctx, 'switch'),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.redAccent,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.logout, size: 14),
+                                  label: Text(_currentLang == 'vi' ? "Đăng Xuất" : "Logout"),
+                                  onPressed: () => Navigator.pop(ctx, 'logout'),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, 'cancel'),
-                          child: Text(_currentLang == 'vi' ? "Đóng" : "Close"),
-                        ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], foregroundColor: Colors.white),
-                          icon: const Icon(Icons.swap_horiz, size: 14),
-                          label: Text(_currentLang == 'vi' ? "Đổi Tài Khoản" : "Switch Account"),
-                          onPressed: () => Navigator.pop(ctx, 'switch'),
-                        ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-                          icon: const Icon(Icons.logout, size: 14),
-                          label: Text(_currentLang == 'vi' ? "Đăng Xuất" : "Logout"),
-                          onPressed: () => Navigator.pop(ctx, 'logout'),
-                        ),
-                      ],
                     ),
                   );
 
