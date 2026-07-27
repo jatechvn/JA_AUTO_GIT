@@ -756,6 +756,32 @@ class GitService {
     return false;
   }
 
+  static Future<bool> deleteClonedDirectory(String localPath, void Function(String) log) async {
+    try {
+      final absPath = p.absolute(localPath);
+      final dir = Directory(absPath);
+      if (!dir.existsSync()) {
+        log("[WARN] Folder does not exist: $absPath\n");
+        return true;
+      }
+      log("[INFO] Removing local downloaded folder: $absPath...\n");
+      if (Platform.isWindows) {
+        await Process.run('attrib', ['-r', '-h', '-s', '$absPath\\*.*', '/s', '/d']);
+        final res = await Process.run('cmd.exe', ['/c', 'rmdir', '/s', '/q', absPath]);
+        if (res.exitCode == 0) {
+          log("[OK] Deleted local folder $absPath\n");
+          return true;
+        }
+      }
+      dir.deleteSync(recursive: true);
+      log("[OK] Deleted local folder $absPath\n");
+      return true;
+    } catch (e) {
+      log("[ERROR] Failed to delete local folder: $e\n");
+      return false;
+    }
+  }
+
   static Future<bool> syncCloudProject(Map<String, dynamic> task, void Function(String) log) async {
     final actionType = task['action_type'];
     final repoUrl = task['repo_url'];

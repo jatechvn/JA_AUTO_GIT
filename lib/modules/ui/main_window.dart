@@ -1450,9 +1450,18 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                       onPressed: () async {
                         setState(() => _showConsole = true);
                         _addLog("Starting Git Clone for ${cp.name}...");
+                        final root = _rootCtrl.text.trim();
+                        if (root.isNotEmpty && !Directory(root).existsSync()) {
+                          try {
+                            Directory(root).createSync(recursive: true);
+                            _addLog("Created target clone directory: $root", level: 'INFO');
+                          } catch (e) {
+                            _addLog("Failed to create target clone directory $root: $e", level: 'ERROR');
+                          }
+                        }
                         final ok = await GitService.cloneCloudRepo(cp.url, cp.localPath, (m) => _addLog(m));
                         if (ok) {
-                          _addLog("Cloned ${cp.name} successfully!", level: 'SUCCESS');
+                          _addLog("Cloned ${cp.name} successfully into ${cp.localPath}!", level: 'SUCCESS');
                         }
                         _scanCloud();
                         _scanLocal();
@@ -1522,23 +1531,106 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                       },
                     ),
                     IconButton(
+                      icon: const Icon(Icons.folder_delete_outlined, size: 16, color: Colors.redAccent),
+                      tooltip: _currentLang == 'vi' ? "Xóa thư mục đã tải xuống" : "Delete Downloaded Clone Folder",
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => GlassDialog(
+                            title: _currentLang == 'vi' ? "Xóa Thư Mục Đã Tải?" : "Delete Downloaded Folder?",
+                            isDark: widget.themeNotifier.isDark,
+                            width: 480,
+                            height: 220,
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _currentLang == 'vi' 
+                                        ? "Bạn có chắc chắn muốn xóa toàn bộ thư mục dự án '${cp.name}' đã tải xuống khỏi máy tính?" 
+                                        : "Are you sure you want to delete local downloaded folder for '${cp.name}'?",
+                                    style: TextStyle(color: _c.textPrimary, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    cp.localPath,
+                                    style: TextStyle(color: _c.textMuted, fontSize: 11),
+                                  ),
+                                  const Spacer(),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: Text(_currentLang == 'vi' ? "Hủy" : "Cancel", style: TextStyle(color: _c.textMuted)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                                        icon: const Icon(Icons.folder_delete, size: 14),
+                                        label: Text(_currentLang == 'vi' ? "Xóa Thư Mục" : "Delete Folder"),
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                        if (confirm == true) {
+                          setState(() => _showConsole = true);
+                          final ok = await GitService.deleteClonedDirectory(cp.localPath, (m) => _addLog(m));
+                          if (ok) {
+                            _addLog("Deleted cloned directory for ${cp.name}!", level: 'SUCCESS');
+                          }
+                          _scanCloud();
+                          _scanLocal();
+                        }
+                      },
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.layers_clear_outlined, size: 16, color: Colors.orangeAccent),
                       tooltip: "Delete Local .git Folder",
                       onPressed: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
-                          builder: (ctx) => AlertDialog(
-                            backgroundColor: _c.bgCard,
-                            title: Text("Delete Local .git Folder?", style: TextStyle(color: _c.textPrimary)),
-                            content: Text("Are you sure you want to remove .git folder from local project '${cp.name}'?", style: TextStyle(color: _c.textSecondary)),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, foregroundColor: Colors.black),
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text("Delete .git"),
+                          builder: (ctx) => GlassDialog(
+                            title: _currentLang == 'vi' ? "Xóa Thư Mục .git Cục Bộ?" : "Delete Local .git Folder?",
+                            isDark: widget.themeNotifier.isDark,
+                            width: 480,
+                            height: 220,
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _currentLang == 'vi'
+                                        ? "Bạn có chắc chắn muốn xóa thư mục .git khỏi dự án '${cp.name}'?"
+                                        : "Are you sure you want to remove .git folder from local project '${cp.name}'?",
+                                    style: TextStyle(color: _c.textPrimary, fontSize: 13),
+                                  ),
+                                  const Spacer(),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: Text(_currentLang == 'vi' ? "Hủy" : "Cancel", style: TextStyle(color: _c.textMuted)),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, foregroundColor: Colors.black),
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: Text(_currentLang == 'vi' ? "Xóa .git" : "Delete .git"),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         );
                         if (confirm == true) {
