@@ -8,6 +8,7 @@ import '../../utils/i18n.dart';
 import '../../utils/windows_info.dart';
 import '../../services/git_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -1218,6 +1219,7 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
   String _releaseLabel = 'latest'; // 'none', 'prerelease', 'latest', 'draft'
   bool _generateNotesAuto = false;
   bool _isPreviewMode = false;
+  bool _isDraggingFile = false;
 
   bool _isLoadingDocs = false;
   String? _detectedReadme;
@@ -1582,12 +1584,12 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                       ),
                     const SizedBox(height: 14),
 
-                    // Attach Binaries / Assets
+                    // Attach Binaries / Assets with Drag & Drop Support
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          isVi ? "Đính kèm file binaries/assets:" : "Attach binaries by selecting files:",
+                          isVi ? "Đính kèm file binaries/assets (Kéo & thả hoặc bấm nút):" : "Attach binaries by drag & drop or select files:",
                           style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         ElevatedButton.icon(
@@ -1605,66 +1607,116 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                     ),
                     const SizedBox(height: 6),
 
-                    InkWell(
-                      onTap: _pickAssetFiles,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: c.bgSecondary,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _assetPaths.isNotEmpty ? AppConstants.accentCyan : c.borderDefault,
-                            width: 1,
+                    DropTarget(
+                      onDragEntered: (detail) {
+                        setState(() => _isDraggingFile = true);
+                      },
+                      onDragExited: (detail) {
+                        setState(() => _isDraggingFile = false);
+                      },
+                      onDragDone: (detail) {
+                        setState(() => _isDraggingFile = false);
+                        final paths = detail.files.map((f) => f.path).where((p) => p.isNotEmpty).toList();
+                        if (paths.isNotEmpty) {
+                          setState(() {
+                            for (var p in paths) {
+                              if (!_assetPaths.contains(p)) _assetPaths.add(p);
+                            }
+                          });
+                        }
+                      },
+                      child: InkWell(
+                        onTap: _pickAssetFiles,
+                        borderRadius: BorderRadius.circular(8),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _isDraggingFile ? AppConstants.accentCyan.withOpacity(0.15) : c.bgSecondary,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _isDraggingFile
+                                  ? AppConstants.accentCyan
+                                  : (_assetPaths.isNotEmpty ? AppConstants.accentCyan.withOpacity(0.6) : c.borderDefault),
+                              width: _isDraggingFile ? 2 : 1,
+                            ),
                           ),
-                        ),
-                        child: _assetPaths.isEmpty
-                            ? Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.cloud_upload_outlined, size: 20, color: AppConstants.accentCyan),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    isVi
-                                        ? "Nhấn vào đây để tải lên file đính kèm (.exe, .zip, .apk...)"
-                                        : "Click here to select and attach files (.exe, .zip, .apk...)",
-                                    style: TextStyle(color: c.textMuted, fontSize: 11),
-                                  ),
-                                ],
-                              )
-                            : Column(
-                                children: _assetPaths.map((ap) {
-                                  final filename = p.basename(ap);
-                                  final file = File(ap);
-                                  final sizeMb = file.existsSync() ? (file.lengthSync() / 1024 / 1024).toStringAsFixed(2) : "0";
+                          child: _assetPaths.isEmpty
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      _isDraggingFile ? Icons.file_download : Icons.cloud_upload_outlined,
+                                      size: 22,
+                                      color: _isDraggingFile ? Colors.amber : AppConstants.accentCyan,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _isDraggingFile
+                                          ? (isVi ? "Thả tệp vào đây để đính kèm!" : "Drop files here to attach!")
+                                          : (isVi
+                                              ? "Kéo & thả file vào đây hoặc bấm để chọn tệp (.exe, .zip, .apk...)"
+                                              : "Drag & drop files here or click to attach (.exe, .zip, .apk...)"),
+                                      style: TextStyle(
+                                        color: _isDraggingFile ? Colors.amber : c.textMuted,
+                                        fontSize: 11,
+                                        fontWeight: _isDraggingFile ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    if (_isDraggingFile)
+                                      Container(
+                                        margin: const EdgeInsets.only(bottom: 8),
+                                        padding: const EdgeInsets.symmetric(vertical: 4),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.file_download, size: 16, color: Colors.amber),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              isVi ? "Thả để thêm tệp mới!" : "Drop to add new files!",
+                                              style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ..._assetPaths.map((ap) {
+                                      final filename = p.basename(ap);
+                                      final file = File(ap);
+                                      final sizeMb = file.existsSync() ? (file.lengthSync() / 1024 / 1024).toStringAsFixed(2) : "0";
 
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: c.bgCard,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.insert_drive_file_outlined, size: 16, color: AppConstants.accentCyan),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text("$filename (${sizeMb} MB)", style: TextStyle(color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      return Container(
+                                        margin: const EdgeInsets.only(bottom: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: c.bgCard,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
                                         ),
-                                        IconButton(
-                                          icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () => setState(() => _assetPaths.remove(ap)),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.insert_drive_file_outlined, size: 16, color: AppConstants.accentCyan),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text("$filename (${sizeMb} MB)", style: TextStyle(color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              onPressed: () => setState(() => _assetPaths.remove(ap)),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
+                                      );
+                                    }).toList(),
+                                  ],
+                                ),
+                        ),
                       ),
                     ),
 
