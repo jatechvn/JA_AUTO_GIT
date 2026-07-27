@@ -1650,31 +1650,42 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     icon: const Icon(Icons.publish_outlined, size: 16, color: AppConstants.accentCyan),
                     tooltip: _currentLang == 'vi' ? "Đẩy Release lên GitHub" : "Publish Release to GitHub",
                     onPressed: () async {
-                      final releaseData = await showDialog<Map<String, String?>>(
+                      final releaseData = await showDialog<Map<String, dynamic>>(
                         context: context,
                         builder: (ctx) => PublishReleaseDialog(
                           repoName: cp.name,
                           owner: _ownerCtrl.text,
+                          localPath: cp.localPath,
                           isDark: widget.themeNotifier.isDark,
                           lang: _currentLang,
                         ),
                       );
                       if (releaseData != null) {
-                        final tag = releaseData['tag'] ?? '';
-                        final title = releaseData['title'] ?? '';
-                        final notes = releaseData['notes'] ?? '';
-                        final assetPath = releaseData['assetPath'];
+                        final tag = releaseData['tag']?.toString() ?? '';
+                        final targetBranch = releaseData['targetBranch']?.toString() ?? 'main';
+                        final title = releaseData['title']?.toString() ?? '';
+                        final notes = releaseData['notes']?.toString() ?? '';
+                        final generateNotes = releaseData['generateNotes'] == true;
+                        final isDraft = releaseData['isDraft'] == true;
+                        final isPrerelease = releaseData['isPrerelease'] == true;
+                        final isLatest = releaseData['isLatest'] == true;
+                        final assetPaths = (releaseData['assetPaths'] as List?)?.cast<String>();
 
                         if (tag.isNotEmpty) {
                           setState(() => _showConsole = true);
-                          _addLog("Publishing release $tag for ${cp.name}...");
+                          _addLog("Publishing release $tag for ${cp.name} (target: $targetBranch)...");
                           final ok = await GitService.createGithubRelease(
                             owner: _ownerCtrl.text,
                             repoName: cp.name,
                             tagName: tag,
+                            targetBranch: targetBranch,
                             releaseTitle: title,
                             releaseNotes: notes,
-                            assetFilePath: assetPath,
+                            generateNotes: generateNotes,
+                            isDraft: isDraft,
+                            isPrerelease: isPrerelease,
+                            isLatest: isLatest,
+                            assetFilePaths: assetPaths,
                             log: (m) => _addLog(m),
                           );
                           if (ok) {

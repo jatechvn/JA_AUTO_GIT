@@ -937,30 +937,55 @@ class GitService {
     required String tagName,
     required String releaseTitle,
     required String releaseNotes,
-    String? assetFilePath,
+    String targetBranch = 'main',
+    bool isDraft = false,
+    bool isPrerelease = false,
+    bool isLatest = true,
+    bool generateNotes = false,
+    List<String>? assetFilePaths,
     required void Function(String) log,
   }) async {
     final gh = findGhExecutable();
     final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
     final repoSlug = "$owner/$repoName";
 
-    log("[INFO] Publishing Release $tagName for $repoSlug...\n");
+    log("[INFO] Publishing Release $tagName for $repoSlug (target: $targetBranch)...\n");
 
     final cmdArgs = <String>[
       'release',
       'create',
       tagName,
+      '--target',
+      targetBranch.isNotEmpty ? targetBranch : 'main',
       '--title',
       releaseTitle.isNotEmpty ? releaseTitle : tagName,
-      '--notes',
-      releaseNotes,
       '-R',
       repoSlug,
     ];
 
-    if (assetFilePath != null && assetFilePath.isNotEmpty && File(assetFilePath).existsSync()) {
-      cmdArgs.add(assetFilePath);
-      log("[INFO] Attaching release asset file: $assetFilePath\n");
+    if (generateNotes) {
+      cmdArgs.add('--generate-notes');
+    } else {
+      cmdArgs.addAll(['--notes', releaseNotes]);
+    }
+
+    if (isDraft) {
+      cmdArgs.add('--draft');
+    }
+    if (isPrerelease) {
+      cmdArgs.add('--prerelease');
+    }
+    if (isLatest && !isDraft && !isPrerelease) {
+      cmdArgs.add('--latest');
+    }
+
+    if (assetFilePaths != null && assetFilePaths.isNotEmpty) {
+      for (var f in assetFilePaths) {
+        if (File(f).existsSync()) {
+          cmdArgs.add(f);
+          log("[INFO] Attaching release asset file: $f\n");
+        }
+      }
     }
 
     log("\$ ${gh} ${cmdArgs.join(' ')}\n");
