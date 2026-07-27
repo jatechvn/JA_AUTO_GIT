@@ -931,6 +931,52 @@ class GitService {
     }
   }
 
+  static Future<bool> createGithubRelease({
+    required String owner,
+    required String repoName,
+    required String tagName,
+    required String releaseTitle,
+    required String releaseNotes,
+    String? assetFilePath,
+    required void Function(String) log,
+  }) async {
+    final gh = findGhExecutable();
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+    final repoSlug = "$owner/$repoName";
+
+    log("[INFO] Publishing Release $tagName for $repoSlug...\n");
+
+    final cmdArgs = <String>[
+      'release',
+      'create',
+      tagName,
+      '--title',
+      releaseTitle.isNotEmpty ? releaseTitle : tagName,
+      '--notes',
+      releaseNotes,
+      '-R',
+      repoSlug,
+    ];
+
+    if (assetFilePath != null && assetFilePath.isNotEmpty && File(assetFilePath).existsSync()) {
+      cmdArgs.add(assetFilePath);
+      log("[INFO] Attaching release asset file: $assetFilePath\n");
+    }
+
+    log("\$ ${gh} ${cmdArgs.join(' ')}\n");
+    final res = await Process.run(gh, cmdArgs, environment: env);
+    if (res.stdout.toString().isNotEmpty) log(res.stdout.toString());
+    if (res.stderr.toString().isNotEmpty) log(res.stderr.toString());
+
+    if (res.exitCode == 0) {
+      log("[OK] Published Release $tagName for $repoSlug successfully!\n");
+      return true;
+    } else {
+      log("[ERROR] Failed to publish release: ${res.stderr}\n");
+      return false;
+    }
+  }
+
   static Future<bool> renameCloudRepo(
     String remoteBase,
     String oldName,

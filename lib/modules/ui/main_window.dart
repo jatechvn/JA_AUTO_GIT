@@ -1647,6 +1647,44 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     ),
                   ],
                   IconButton(
+                    icon: const Icon(Icons.publish_outlined, size: 16, color: AppConstants.accentCyan),
+                    tooltip: _currentLang == 'vi' ? "Đẩy Release lên GitHub" : "Publish Release to GitHub",
+                    onPressed: () async {
+                      final releaseData = await showDialog<Map<String, String?>>(
+                        context: context,
+                        builder: (ctx) => PublishReleaseDialog(
+                          repoName: cp.name,
+                          owner: _ownerCtrl.text,
+                          isDark: widget.themeNotifier.isDark,
+                          lang: _currentLang,
+                        ),
+                      );
+                      if (releaseData != null) {
+                        final tag = releaseData['tag'] ?? '';
+                        final title = releaseData['title'] ?? '';
+                        final notes = releaseData['notes'] ?? '';
+                        final assetPath = releaseData['assetPath'];
+
+                        if (tag.isNotEmpty) {
+                          setState(() => _showConsole = true);
+                          _addLog("Publishing release $tag for ${cp.name}...");
+                          final ok = await GitService.createGithubRelease(
+                            owner: _ownerCtrl.text,
+                            repoName: cp.name,
+                            tagName: tag,
+                            releaseTitle: title,
+                            releaseNotes: notes,
+                            assetFilePath: assetPath,
+                            log: (m) => _addLog(m),
+                          );
+                          if (ok) {
+                            _addLog("Published release $tag for ${cp.name} successfully!", level: 'SUCCESS');
+                          }
+                        }
+                      }
+                    },
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.open_in_new, size: 16, color: Colors.blueAccent),
                     tooltip: "Open in Browser",
                     onPressed: () => openUrlHelper(cp.url),

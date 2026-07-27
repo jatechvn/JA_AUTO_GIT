@@ -7,6 +7,7 @@ import '../../utils/constants.dart';
 import '../../utils/i18n.dart';
 import '../../utils/windows_info.dart';
 import '../../services/git_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'styles.dart';
@@ -1180,6 +1181,194 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Publish Release Dialog for GitHub Cloud
+class PublishReleaseDialog extends StatefulWidget {
+  final String repoName;
+  final String owner;
+  final bool isDark;
+  final String lang;
+
+  const PublishReleaseDialog({
+    Key? key,
+    required this.repoName,
+    required this.owner,
+    required this.isDark,
+    required this.lang,
+  }) : super(key: key);
+
+  @override
+  State<PublishReleaseDialog> createState() => _PublishReleaseDialogState();
+}
+
+class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
+  final _tagCtrl = TextEditingController(text: "v1.0.0");
+  final _titleCtrl = TextEditingController(text: "Release v1.0.0");
+  final _notesCtrl = TextEditingController(text: "Initial release notes...");
+  String? _selectedAssetPath;
+
+  @override
+  void dispose() {
+    _tagCtrl.dispose();
+    _titleCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final isVi = widget.lang == 'vi';
+
+    return GlassDialog(
+      title: isVi ? "ĐẨY RELEASE - ${widget.repoName}" : "PUBLISH RELEASE - ${widget.repoName}",
+      isDark: widget.isDark,
+      width: 580,
+      height: 480,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Tag / Version
+            TextField(
+              controller: _tagCtrl,
+              style: TextStyle(color: c.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: isVi ? "Tag Version (Ví dụ: v1.0.0)" : "Tag Version (e.g. v1.0.0)",
+                labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
+                prefixIcon: const Icon(Icons.sell_outlined, size: 16, color: AppConstants.accentCyan),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Release Title
+            TextField(
+              controller: _titleCtrl,
+              style: TextStyle(color: c.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: isVi ? "Tiêu đề Release (Release Title)" : "Release Title",
+                labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
+                prefixIcon: const Icon(Icons.title, size: 16, color: AppConstants.accentGreen),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Release Notes
+            TextField(
+              controller: _notesCtrl,
+              maxLines: 3,
+              style: TextStyle(color: c.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
+                labelText: isVi ? "Ghi chú Release (Release Notes)" : "Release Notes",
+                labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
+                alignLabelWithHint: true,
+                contentPadding: const EdgeInsets.all(12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Attach File Release
+            Text(
+              isVi ? "Tệp Đính Kèm Release (Attach File Release):" : "Attach File Release Asset:",
+              style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            InkWell(
+              onTap: () async {
+                final res = await FilePicker.platform.pickFiles();
+                if (res != null && res.files.single.path != null) {
+                  setState(() {
+                    _selectedAssetPath = res.files.single.path;
+                  });
+                }
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: c.bgSecondary,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _selectedAssetPath != null ? AppConstants.accentCyan : c.borderDefault),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _selectedAssetPath != null ? Icons.attach_file : Icons.cloud_upload_outlined,
+                      color: _selectedAssetPath != null ? AppConstants.accentCyan : c.textMuted,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _selectedAssetPath ?? (isVi ? "Nhấn để chọn tệp đính kèm (.exe, .zip, .apk...)" : "Click to select asset file (.exe, .zip, .apk...)"),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _selectedAssetPath != null ? c.textPrimary : c.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    if (_selectedAssetPath != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => setState(() => _selectedAssetPath = null),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
+            const Spacer(),
+
+            // Actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(isVi ? "Hủy" : "Cancel", style: TextStyle(color: c.textMuted)),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.accentCyan,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.publish, size: 16),
+                  label: Text(
+                    isVi ? "ĐẨY RELEASE" : "PUBLISH RELEASE",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  onPressed: () {
+                    final tag = _tagCtrl.text.trim();
+                    if (tag.isEmpty) return;
+                    Navigator.pop(context, {
+                      "tag": tag,
+                      "title": _titleCtrl.text.trim(),
+                      "notes": _notesCtrl.text.trim(),
+                      "assetPath": _selectedAssetPath,
+                    });
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
