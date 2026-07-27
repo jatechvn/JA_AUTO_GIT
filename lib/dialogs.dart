@@ -1349,6 +1349,25 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
     super.dispose();
   }
 
+  Future<void> _pickAssetFiles() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        dialogTitle: widget.lang == 'vi' ? "Chọn tệp đính kèm Release" : "Select Release Attachments",
+      );
+      if (res != null) {
+        final paths = res.files.map((f) => f.path).whereType<String>().toList();
+        setState(() {
+          for (var p in paths) {
+            if (!_assetPaths.contains(p)) _assetPaths.add(p);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("FilePicker error: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.appColors;
@@ -1405,7 +1424,7 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Release Title
+                    // Release Title with Paste Icon
                     TextField(
                       controller: _titleCtrl,
                       style: TextStyle(color: c.textPrimary, fontSize: 13),
@@ -1413,6 +1432,16 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                         labelText: isVi ? "Tiêu đề Release (Release title)" : "Release title",
                         labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
                         prefixIcon: const Icon(Icons.title, size: 16, color: AppConstants.accentGreen),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.content_paste, size: 16, color: AppConstants.accentCyan),
+                          tooltip: isVi ? "Dán từ Clipboard" : "Paste from Clipboard",
+                          onPressed: () async {
+                            final data = await Clipboard.getData(Clipboard.kTextPlain);
+                            if (data?.text != null && data!.text!.isNotEmpty) {
+                              setState(() => _titleCtrl.text = data.text!);
+                            }
+                          },
+                        ),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
@@ -1476,7 +1505,7 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                     ),
                     const SizedBox(height: 8),
 
-                    // Release Notes Tabs (Write / Preview)
+                    // Release Notes Tabs (Write / Preview) with Paste Icon
                     Row(
                       children: [
                         InkWell(
@@ -1503,6 +1532,17 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                             ),
                             child: Text(isVi ? "Xem trước (Preview)" : "Preview", style: TextStyle(color: _isPreviewMode ? AppConstants.accentCyan : c.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.content_paste_go, size: 16, color: AppConstants.accentCyan),
+                          tooltip: isVi ? "Dán nội dung từ Clipboard vào khung viết" : "Paste Notes from Clipboard",
+                          onPressed: () async {
+                            final data = await Clipboard.getData(Clipboard.kTextPlain);
+                            if (data?.text != null && data!.text!.isNotEmpty) {
+                              setState(() => _notesCtrl.text = data.text!);
+                            }
+                          },
                         ),
                         const Spacer(),
                         if (_generateNotesAuto)
@@ -1537,18 +1577,15 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                     else
                       Container(
                         width: double.infinity,
-                        height: 140,
-                        padding: const EdgeInsets.all(12),
+                        height: 160,
                         decoration: BoxDecoration(
                           color: c.bgSecondary,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: c.borderDefault),
+                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.4)),
                         ),
-                        child: SingleChildScrollView(
-                          child: Text(
-                            _notesCtrl.text.isNotEmpty ? _notesCtrl.text : (isVi ? "(Không có nội dung)" : "(Nothing to preview)"),
-                            style: TextStyle(color: c.textPrimary, fontSize: 12),
-                          ),
+                        child: MarkdownPreviewWidget(
+                          text: _notesCtrl.text,
+                          isDark: widget.isDark,
                         ),
                       ),
                     const SizedBox(height: 14),
@@ -1563,77 +1600,81 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                         ),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: c.bgSecondary,
-                            foregroundColor: c.textPrimary,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            backgroundColor: AppConstants.accentCyan.withOpacity(0.18),
+                            foregroundColor: AppConstants.accentCyan,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             minimumSize: Size.zero,
                           ),
                           icon: const Icon(Icons.add_link, size: 14, color: AppConstants.accentCyan),
-                          label: Text(isVi ? "Thêm Tệp File..." : "Attach File...", style: const TextStyle(fontSize: 10)),
-                          onPressed: () async {
-                            final res = await FilePicker.platform.pickFiles(allowMultiple: true);
-                            if (res != null) {
-                              final paths = res.files.map((f) => f.path).whereType<String>().toList();
-                              setState(() {
-                                for (var p in paths) {
-                                  if (!_assetPaths.contains(p)) _assetPaths.add(p);
-                                }
-                              });
-                            }
-                          },
+                          label: Text(isVi ? "Thêm Tệp File..." : "Attach File...", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          onPressed: _pickAssetFiles,
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
 
-                    if (_assetPaths.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(12),
+                    InkWell(
+                      onTap: _pickAssetFiles,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: c.bgSecondary,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: c.borderDefault),
-                        ),
-                        child: Center(
-                          child: Text(
-                            isVi ? "Chưa có file đính kèm (.exe, .zip, .apk...). Nhấn nút 'Thêm Tệp File...' ở trên để tải lên." : "No attached files (.exe, .zip, .apk...). Click 'Attach File...' above.",
-                            style: TextStyle(color: c.textMuted, fontSize: 10),
+                          border: Border.all(
+                            color: _assetPaths.isNotEmpty ? AppConstants.accentCyan : c.borderDefault,
+                            width: 1,
                           ),
                         ),
-                      )
-                    else
-                      Column(
-                        children: _assetPaths.map((ap) {
-                          final filename = p.basename(ap);
-                          final file = File(ap);
-                          final sizeKb = file.existsSync() ? (file.lengthSync() / 1024 / 1024).toStringAsFixed(2) : "0";
+                        child: _assetPaths.isEmpty
+                            ? Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.cloud_upload_outlined, size: 20, color: AppConstants.accentCyan),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isVi
+                                        ? "Nhấn vào đây để tải lên file đính kèm (.exe, .zip, .apk...)"
+                                        : "Click here to select and attach files (.exe, .zip, .apk...)",
+                                    style: TextStyle(color: c.textMuted, fontSize: 11),
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                children: _assetPaths.map((ap) {
+                                  final filename = p.basename(ap);
+                                  final file = File(ap);
+                                  final sizeMb = file.existsSync() ? (file.lengthSync() / 1024 / 1024).toStringAsFixed(2) : "0";
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 4),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: c.bgSecondary,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: AppConstants.accentCyan.withOpacity(0.4)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.insert_drive_file_outlined, size: 14, color: AppConstants.accentCyan),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text("$filename (${sizeKb} MB)", style: TextStyle(color: c.textPrimary, fontSize: 11)),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.close, size: 14, color: Colors.redAccent),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  onPressed: () => setState(() => _assetPaths.remove(ap)),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: c.bgCard,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.insert_drive_file_outlined, size: 16, color: AppConstants.accentCyan),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text("$filename (${sizeMb} MB)", style: TextStyle(color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () => setState(() => _assetPaths.remove(ap)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
                       ),
+                    ),
 
                     const SizedBox(height: 14),
 
@@ -1738,6 +1779,191 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Custom Formatted Markdown & HTML Preview Widget for Release Notes
+class MarkdownPreviewWidget extends StatelessWidget {
+  final String text;
+  final bool isDark;
+
+  const MarkdownPreviewWidget({
+    Key? key,
+    required this.text,
+    required this.isDark,
+  }) : super(key: key);
+
+  String _cleanHtml(String raw) {
+    var s = raw;
+    s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    s = s.replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'</?[bi]>', caseSensitive: false), '');
+    return s.trim();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final cleaned = _cleanHtml(text);
+    final lines = cleaned.split('\n');
+
+    if (cleaned.isEmpty) {
+      return Center(
+        child: Text(
+          "(Preview is empty / Chưa có nội dung xem trước)",
+          style: TextStyle(color: c.textMuted, fontSize: 11, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lines.map((line) {
+          final trimmed = line.trim();
+
+          // Heading 1 (# Heading)
+          if (trimmed.startsWith('# ')) {
+            final content = trimmed.substring(2).replaceAll('**', '').replaceAll('*', '');
+            return Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              padding: const EdgeInsets.only(bottom: 4),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppConstants.accentCyan, width: 1.5)),
+              ),
+              child: Text(
+                content,
+                style: const TextStyle(
+                  color: AppConstants.accentCyan,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          }
+
+          // Heading 2 (## Heading)
+          if (trimmed.startsWith('## ')) {
+            final content = trimmed.substring(3).replaceAll('**', '').replaceAll('*', '');
+            return Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 6),
+              child: Text(
+                content,
+                style: const TextStyle(
+                  color: Colors.greenAccent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          }
+
+          // Heading 3 (### Heading)
+          if (trimmed.startsWith('### ')) {
+            final content = trimmed.substring(4).replaceAll('**', '').replaceAll('*', '');
+            return Container(
+              margin: const EdgeInsets.only(top: 6, bottom: 4),
+              child: Text(
+                content,
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          }
+
+          // Bullet list (- Item or * Item)
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            final content = trimmed.substring(2);
+            return Padding(
+              padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("• ", style: TextStyle(color: AppConstants.accentCyan, fontSize: 13, fontWeight: FontWeight.bold)),
+                  Expanded(
+                    child: _buildRichLine(content, c),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // Blockquote (> Quote)
+          if (trimmed.startsWith('> ')) {
+            final content = trimmed.substring(2);
+            return Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.only(left: 10, top: 4, bottom: 4),
+              decoration: const BoxDecoration(
+                border: Border(left: BorderSide(color: Colors.amber, width: 3)),
+              ),
+              child: Text(
+                content,
+                style: TextStyle(color: c.textSecondary, fontSize: 11, fontStyle: FontStyle.italic),
+              ),
+            );
+          }
+
+          // Empty line spacing
+          if (trimmed.isEmpty) {
+            return const SizedBox(height: 6);
+          }
+
+          // Regular paragraph line
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: _buildRichLine(trimmed, c),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildRichLine(String line, AppColors c) {
+    // Parse bold text **bold**
+    final parts = <TextSpan>[];
+    final regExp = RegExp(r'\*\*(.*?)\*\*|`([^`]+)`');
+    int lastMatchEnd = 0;
+
+    for (final match in regExp.allMatches(line)) {
+      if (match.start > lastMatchEnd) {
+        parts.add(TextSpan(text: line.substring(lastMatchEnd, match.start)));
+      }
+      if (match.group(1) != null) {
+        // Bold
+        parts.add(TextSpan(
+          text: match.group(1),
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ));
+      } else if (match.group(2) != null) {
+        // Code
+        parts.add(TextSpan(
+          text: " ${match.group(2)} ",
+          style: const TextStyle(
+            fontFamily: AppConstants.fontMono,
+            backgroundColor: Color(0xFF222831),
+            color: AppConstants.accentCyan,
+            fontSize: 11,
+          ),
+        ));
+      }
+      lastMatchEnd = match.end;
+    }
+
+    if (lastMatchEnd < line.length) {
+      parts.add(TextSpan(text: line.substring(lastMatchEnd)));
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(color: c.textPrimary, fontSize: 12, height: 1.4),
+        children: parts,
       ),
     );
   }
