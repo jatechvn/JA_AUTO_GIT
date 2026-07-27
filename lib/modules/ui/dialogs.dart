@@ -37,8 +37,8 @@ class GlassDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final settings = SettingsService.loadSettings();
-    final double sigma = blurSigma ?? (settings['dialog_blur'] ?? 12.0);
-    final double opacity = bgOpacity ?? (settings['dialog_opacity'] ?? 0.45);
+    final double sigma = blurSigma ?? (settings['dialog_blur'] ?? 2.0);
+    final double opacity = bgOpacity ?? (settings['dialog_opacity'] ?? 0.8);
 
     final enableTransparency = Platform.isWindows && WindowsInfo.isWindows11OrGreater;
     final bg = enableTransparency ? c.bgSecondary.withOpacity(opacity) : c.bgSecondary;
@@ -440,8 +440,8 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
 
     _bgBlur = (widget.settings['bg_blur'] as num?)?.toDouble() ?? 10.0;
     _bgOpacity = (widget.settings['bg_opacity'] as num?)?.toDouble() ?? 0.6;
-    _dialogBlur = (widget.settings['dialog_blur'] as num?)?.toDouble() ?? 12.0;
-    _dialogOpacity = (widget.settings['dialog_opacity'] as num?)?.toDouble() ?? 0.45;
+    _dialogBlur = (widget.settings['dialog_blur'] as num?)?.toDouble() ?? 2.0;
+    _dialogOpacity = (widget.settings['dialog_opacity'] as num?)?.toDouble() ?? 0.8;
   }
 
   @override
@@ -461,8 +461,8 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
       _repoPublic = false;
       _bgBlur = 10.0;
       _bgOpacity = 0.6;
-      _dialogBlur = 12.0;
-      _dialogOpacity = 0.45;
+      _dialogBlur = 2.0;
+      _dialogOpacity = 0.8;
     });
   }
 

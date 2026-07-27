@@ -235,6 +235,18 @@ class GitService {
     }
   }
 
+  static Future<bool> logoutGithub() async {
+    try {
+      final gh = findGhExecutable();
+      final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+      final res = await Process.run(gh, ['auth', 'logout', '--hostname', 'github.com'], environment: env);
+      return res.exitCode == 0;
+    } catch (e) {
+      LoggerConfig.log("Logout exception: $e", level: 'ERROR');
+      return false;
+    }
+  }
+
   static Future<bool> initRepo(String projectDir) async {
     try {
       final git = findGitExecutable();

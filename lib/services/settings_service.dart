@@ -74,8 +74,8 @@ class SettingsService {
       'theme': data['theme'] ?? 'dark',
       'bg_blur': _safeDouble(data['bg_blur'], 10.0),
       'bg_opacity': _safeDouble(data['bg_opacity'], 0.6),
-      'dialog_blur': _safeDouble(data['dialog_blur'], 12.0),
-      'dialog_opacity': _safeDouble(data['dialog_opacity'], 0.45),
+      'dialog_blur': _safeDouble(data['dialog_blur'], 2.0),
+      'dialog_opacity': _safeDouble(data['dialog_opacity'], 0.8),
     };
   }
 
@@ -99,8 +99,8 @@ class SettingsService {
     buffer.writeln('theme = ${settings['theme'] ?? 'dark'}');
     buffer.writeln('bg_blur = ${settings['bg_blur'] ?? 10.0}');
     buffer.writeln('bg_opacity = ${settings['bg_opacity'] ?? 0.6}');
-    buffer.writeln('dialog_blur = ${settings['dialog_blur'] ?? 12.0}');
-    buffer.writeln('dialog_opacity = ${settings['dialog_opacity'] ?? 0.45}');
+    buffer.writeln('dialog_blur = ${settings['dialog_blur'] ?? 2.0}');
+    buffer.writeln('dialog_opacity = ${settings['dialog_opacity'] ?? 0.8}');
 
     try {
       file.writeAsStringSync(buffer.toString());

@@ -200,10 +200,11 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
         final authedUser = await GitService.getAuthenticatedUsername();
         setState(() {
           _isGithubLoggedIn = true;
-          if (_ownerCtrl.text.trim().isEmpty && authedUser != null) {
+          if (authedUser != null && authedUser.isNotEmpty) {
             _ownerCtrl.text = authedUser;
           }
         });
+        _scanCloud();
         return true;
       }
       return false;
@@ -522,7 +523,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
           // GitHub Auth Status
           Tooltip(
             message: _isGithubLoggedIn 
-                ? (_currentLang == 'vi' ? "Đã đăng nhập GitHub" : "GitHub Logged In") 
+                ? (_currentLang == 'vi' ? "Đã đăng nhập: ${_ownerCtrl.text} (Nhấn để Quản lý / Đăng xuất)" : "Logged in as ${_ownerCtrl.text} (Click to Manage / Logout)") 
                 : (_currentLang == 'vi' ? "Chưa đăng nhập GitHub (Nhấn để đăng nhập)" : "GitHub Not Logged In (Click to login)"),
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
@@ -530,7 +531,88 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 if (!_isGithubLoggedIn) {
                   await _ensureGithubAuth();
                 } else {
-                  _addLog(_currentLang == 'vi' ? "Bạn đã đăng nhập GitHub." : "Already logged into GitHub.", level: 'INFO');
+                  final act = await showDialog<String>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: _c.bgCard,
+                      title: Row(
+                        children: [
+                          const Icon(Icons.account_circle, color: AppConstants.accentGreen),
+                          const SizedBox(width: 8),
+                          Text(
+                            _currentLang == 'vi' ? "Tài khoản GitHub" : "GitHub Account",
+                            style: TextStyle(color: _c.textPrimary),
+                          ),
+                        ],
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _currentLang == 'vi' ? "Tài khoản đang đăng nhập:" : "Currently logged in as:",
+                            style: TextStyle(color: _c.textMuted, fontSize: 12),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppConstants.accentGreen.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppConstants.accentGreen.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.person, color: AppConstants.accentGreen, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text : "GitHub User",
+                                  style: const TextStyle(color: AppConstants.accentGreen, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, 'cancel'),
+                          child: Text(_currentLang == 'vi' ? "Đóng" : "Close"),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], foregroundColor: Colors.white),
+                          icon: const Icon(Icons.swap_horiz, size: 14),
+                          label: Text(_currentLang == 'vi' ? "Đổi Tài Khoản" : "Switch Account"),
+                          onPressed: () => Navigator.pop(ctx, 'switch'),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                          icon: const Icon(Icons.logout, size: 14),
+                          label: Text(_currentLang == 'vi' ? "Đăng Xuất" : "Logout"),
+                          onPressed: () => Navigator.pop(ctx, 'logout'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (act == 'logout' || act == 'switch') {
+                    setState(() => _showConsole = true);
+                    _addLog("Logging out from GitHub...");
+                    await GitService.logoutGithub();
+                    setState(() {
+                      _isGithubLoggedIn = false;
+                      _ownerCtrl.clear();
+                      _cloudProjects.clear();
+                    });
+                    _addLog("Logged out from GitHub successfully.", level: 'SUCCESS');
+
+                    if (act == 'switch') {
+                      final authed = await _ensureGithubAuth();
+                      if (authed) {
+                        _scanCloud();
+                      }
+                    }
+                  }
                 }
               },
               child: Container(
@@ -549,7 +631,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      "GITHUB",
+                      _isGithubLoggedIn && _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text.toUpperCase() : "GITHUB",
                       style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ],
