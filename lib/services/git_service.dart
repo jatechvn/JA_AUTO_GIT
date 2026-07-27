@@ -1002,6 +1002,71 @@ class GitService {
     }
   }
 
+  static Future<Map<String, String>> fetchGithubRepoDocs(String owner, String repoName) async {
+    final gh = findGhExecutable();
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+    final Map<String, String> docs = {};
+
+    // 1. Fetch README.md from GitHub Cloud
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/readme'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
+        if (contentB64.isNotEmpty) {
+          final decoded = utf8.decode(base64.decode(contentB64));
+          docs['readme'] = decoded;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fetch CHANGELOG.md from GitHub Cloud
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/contents/CHANGELOG.md'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
+        if (contentB64.isNotEmpty) {
+          final decoded = utf8.decode(base64.decode(contentB64));
+          docs['changelog'] = decoded;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Auto-generate Release Notes from GitHub API
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/releases/generate-notes', '-f', 'tag_name=v1.0.0'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final body = data['body']?.toString() ?? '';
+        if (body.isNotEmpty) {
+          docs['generated'] = body;
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fetch recent commits summary
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/commits?per_page=10'], environment: env);
+      if (res.exitCode == 0) {
+        final List<dynamic> commits = json.decode(res.stdout);
+        final lines = <String>[];
+        for (var c in commits) {
+          final msg = (c['commit']?['message']?.toString() ?? '').split('\n').first;
+          final sha = (c['sha']?.toString() ?? '').substring(0, 7);
+          if (msg.isNotEmpty) {
+            lines.add("- $msg ($sha)");
+          }
+        }
+        if (lines.isNotEmpty) {
+          docs['commits'] = "## Recent Changes\n${lines.join('\n')}";
+        }
+      }
+    } catch (_) {}
+
+    return docs;
+  }
+
   static Future<bool> renameCloudRepo(
     String remoteBase,
     String oldName,

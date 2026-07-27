@@ -1219,8 +1219,11 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
   bool _generateNotesAuto = false;
   bool _isPreviewMode = false;
 
+  bool _isLoadingDocs = false;
   String? _detectedReadme;
   String? _detectedChangelog;
+  String? _detectedGenerated;
+  String? _detectedCommits;
 
   @override
   void initState() {
@@ -1230,7 +1233,40 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
     _titleCtrl = TextEditingController(text: "Release v1.0.0");
     _notesCtrl = TextEditingController(text: "");
 
+    _detectLocalAndRemoteDocs();
+  }
+
+  Future<void> _detectLocalAndRemoteDocs() async {
     _detectLocalDocsAndVersion();
+
+    setState(() => _isLoadingDocs = true);
+    try {
+      final docs = await GitService.fetchGithubRepoDocs(widget.owner, widget.repoName);
+      if (mounted) {
+        setState(() {
+          _isLoadingDocs = false;
+          if (docs.containsKey('changelog')) _detectedChangelog = docs['changelog'];
+          if (docs.containsKey('readme')) _detectedReadme = docs['readme'];
+          if (docs.containsKey('generated')) _detectedGenerated = docs['generated'];
+          if (docs.containsKey('commits')) _detectedCommits = docs['commits'];
+
+          // Auto fill notes if currently empty or default
+          if (_notesCtrl.text.isEmpty || _notesCtrl.text.startsWith("Initial release notes")) {
+            if (_detectedChangelog != null && _detectedChangelog!.isNotEmpty) {
+              _notesCtrl.text = _detectedChangelog!;
+            } else if (_detectedGenerated != null && _detectedGenerated!.isNotEmpty) {
+              _notesCtrl.text = _detectedGenerated!;
+            } else if (_detectedCommits != null && _detectedCommits!.isNotEmpty) {
+              _notesCtrl.text = _detectedCommits!;
+            } else if (_detectedReadme != null && _detectedReadme!.isNotEmpty) {
+              _notesCtrl.text = _detectedReadme!;
+            }
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingDocs = false);
+    }
   }
 
   void _detectLocalDocsAndVersion() {
@@ -1391,28 +1427,36 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                           style: TextStyle(color: c.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 8),
-                        if (_detectedChangelog != null)
+                        if (_isLoadingDocs) ...[
+                          const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppConstants.accentCyan)),
+                          const SizedBox(width: 6),
+                          Text(isVi ? "Đang tải GitHub..." : "Fetching GitHub docs...", style: TextStyle(color: c.textMuted, fontSize: 10)),
+                        ],
+                        if (_detectedChangelog != null) ...[
+                          const SizedBox(width: 6),
                           ActionChip(
                             avatar: const Icon(Icons.history_edu, size: 13, color: AppConstants.accentCyan),
                             label: const Text("CHANGELOG.md", style: TextStyle(fontSize: 10, color: AppConstants.accentCyan)),
                             backgroundColor: AppConstants.accentCyan.withOpacity(0.12),
-                            onPressed: () {
-                              setState(() {
-                                _notesCtrl.text = _detectedChangelog!;
-                              });
-                            },
+                            onPressed: () => setState(() => _notesCtrl.text = _detectedChangelog!),
                           ),
+                        ],
                         if (_detectedReadme != null) ...[
                           const SizedBox(width: 6),
                           ActionChip(
                             avatar: const Icon(Icons.menu_book_outlined, size: 13, color: Colors.greenAccent),
                             label: const Text("README.md", style: TextStyle(fontSize: 10, color: Colors.greenAccent)),
                             backgroundColor: Colors.green.withOpacity(0.12),
-                            onPressed: () {
-                              setState(() {
-                                _notesCtrl.text = _detectedReadme!;
-                              });
-                            },
+                            onPressed: () => setState(() => _notesCtrl.text = _detectedReadme!),
+                          ),
+                        ],
+                        if (_detectedCommits != null) ...[
+                          const SizedBox(width: 6),
+                          ActionChip(
+                            avatar: const Icon(Icons.list_alt, size: 13, color: Colors.orangeAccent),
+                            label: Text(isVi ? "Git Commits" : "Git Commits", style: const TextStyle(fontSize: 10, color: Colors.orangeAccent)),
+                            backgroundColor: Colors.orange.withOpacity(0.12),
+                            onPressed: () => setState(() => _notesCtrl.text = _detectedCommits!),
                           ),
                         ],
                         const SizedBox(width: 6),
@@ -1421,9 +1465,11 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
                           label: Text(isVi ? "GitHub AI Notes" : "Generate Notes", style: const TextStyle(fontSize: 10, color: Colors.amber)),
                           backgroundColor: Colors.amber.withOpacity(0.12),
                           onPressed: () {
-                            setState(() {
-                              _generateNotesAuto = !_generateNotesAuto;
-                            });
+                            if (_detectedGenerated != null) {
+                              setState(() => _notesCtrl.text = _detectedGenerated!);
+                            } else {
+                              setState(() => _generateNotesAuto = !_generateNotesAuto);
+                            }
                           },
                         ),
                       ],
