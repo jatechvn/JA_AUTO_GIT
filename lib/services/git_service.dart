@@ -572,15 +572,24 @@ class GitService {
             ? (repo['primaryLanguage'] as Map)['name']?.toString() ?? ''
             : '';
 
-        // Search locally
+        // Search locally in rootDir AND in SettingsService.appCloneDir
+        final appCloneDir = SettingsService.appCloneDir;
         String? localPath;
+        final searchBases = [
+          if (rootDir.isNotEmpty && Directory(rootDir).existsSync()) rootDir,
+          appCloneDir,
+        ];
         final subfolders = ["", "PROJECT_PY", "PROJECT_C#", "PROJECT_AHK", "PROJECT_JS", "PROJECT_PS1"];
-        for (var sf in subfolders) {
-          final cand = sf.isEmpty ? p.join(rootDir, name) : p.join(rootDir, sf, name);
-          if (Directory(cand).existsSync()) {
-            localPath = cand;
-            break;
+
+        for (var base in searchBases) {
+          for (var sf in subfolders) {
+            final cand = sf.isEmpty ? p.join(base, name) : p.join(base, sf, name);
+            if (Directory(cand).existsSync()) {
+              localPath = cand;
+              break;
+            }
           }
+          if (localPath != null) break;
         }
 
         String kind = 'project';
@@ -599,42 +608,21 @@ class GitService {
           }
         } else {
           final nameUpper = name.toUpperCase();
-          String subfolder = '';
-          if (nameUpper.endsWith('_PY')) {
-            subfolder = "PROJECT_PY";
+          final langL = primaryLang.toLowerCase();
+          if (nameUpper.endsWith('_PY') || langL.contains('python')) {
             kind = "python";
-          } else if (nameUpper.endsWith('_CS')) {
-            subfolder = "PROJECT_C#";
+          } else if (nameUpper.endsWith('_CS') || langL.contains('c#')) {
             kind = "c#";
-          } else if (nameUpper.endsWith('_AHK')) {
-            subfolder = "PROJECT_AHK";
+          } else if (nameUpper.endsWith('_AHK') || langL.contains('autohotkey') || langL.contains('ahk')) {
             kind = "ahk";
-          } else if (nameUpper.endsWith('_NODE')) {
-            subfolder = "PROJECT_JS";
+          } else if (nameUpper.endsWith('_NODE') || langL.contains('javascript') || langL.contains('typescript') || langL.contains('node')) {
             kind = "node";
-          } else if (nameUpper.endsWith('_PS1')) {
-            subfolder = "PROJECT_PS1";
+          } else if (nameUpper.endsWith('_PS1') || langL.contains('powershell') || langL.contains('batch')) {
             kind = "powershell";
-          } else if (primaryLang.isNotEmpty) {
-            final langL = primaryLang.toLowerCase();
-            if (langL.contains('python')) {
-              subfolder = "PROJECT_PY";
-              kind = "python";
-            } else if (langL.contains('c#')) {
-              subfolder = "PROJECT_C#";
-              kind = "c#";
-            } else if (langL.contains('autohotkey') || langL.contains('ahk')) {
-              subfolder = "PROJECT_AHK";
-              kind = "ahk";
-            } else if (langL.contains('javascript') || langL.contains('typescript') || langL.contains('node')) {
-              subfolder = "PROJECT_JS";
-              kind = "node";
-            } else if (langL.contains('powershell') || langL.contains('batch')) {
-              subfolder = "PROJECT_PS1";
-              kind = "powershell";
-            }
           }
-          localPath = subfolder.isNotEmpty ? p.join(rootDir, subfolder, name) : p.join(rootDir, name);
+
+          // Target clone path for uncloned repositories is inside app's Clone subfolder
+          localPath = p.join(appCloneDir, name);
         }
 
         String syncStatus = "Not Cloned";

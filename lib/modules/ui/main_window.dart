@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'styles.dart';
@@ -1449,14 +1450,14 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                       label: const Text("CLONE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                       onPressed: () async {
                         setState(() => _showConsole = true);
-                        _addLog("Starting Git Clone for ${cp.name}...");
-                        final root = _rootCtrl.text.trim();
-                        if (root.isNotEmpty && !Directory(root).existsSync()) {
+                        _addLog("Starting Git Clone for ${cp.name} into ${cp.localPath}...");
+                        final cloneParentDir = p.dirname(cp.localPath);
+                        if (!Directory(cloneParentDir).existsSync()) {
                           try {
-                            Directory(root).createSync(recursive: true);
-                            _addLog("Created target clone directory: $root", level: 'INFO');
+                            Directory(cloneParentDir).createSync(recursive: true);
+                            _addLog("Created target clone directory: $cloneParentDir", level: 'INFO');
                           } catch (e) {
-                            _addLog("Failed to create target clone directory $root: $e", level: 'ERROR');
+                            _addLog("Failed to create target clone directory $cloneParentDir: $e", level: 'ERROR');
                           }
                         }
                         final ok = await GitService.cloneCloudRepo(cp.url, cp.localPath, (m) => _addLog(m));

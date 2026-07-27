@@ -18,6 +18,16 @@ class SettingsService {
     return prodPath;
   }
 
+  static String get appCloneDir {
+    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final prodCloneDir = p.join(exeDir, 'Clone');
+    if (Platform.resolvedExecutable.contains('flutter-tool') ||
+        Platform.resolvedExecutable.contains('dart')) {
+      return p.join(Directory.current.path, 'dist', 'Clone');
+    }
+    return prodCloneDir;
+  }
+
   static Map<String, dynamic> loadSettings() {
     final Map<String, String> data = {};
     final file = File(configPath);
