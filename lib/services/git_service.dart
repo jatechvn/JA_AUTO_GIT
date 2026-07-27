@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher_string.dart';
+import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import 'scanner_service.dart';
 import 'settings_service.dart';
 import '../utils/constants.dart';
@@ -1065,6 +1067,36 @@ class GitService {
     } catch (_) {}
 
     return docs;
+  }
+
+  static Future<List<String>> pickFilesNative({bool allowMultiple = true}) async {
+    // 1. Try FilePicker plugin first
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        allowMultiple: allowMultiple,
+        type: FileType.any,
+      );
+      if (res != null) {
+        final paths = res.files.map((f) => f.path).whereType<String>().toList();
+        if (paths.isNotEmpty) return paths;
+      }
+    } catch (e) {
+      debugPrint("FilePicker plugin error: $e");
+    }
+
+    // 2. Native Windows PowerShell OpenFileDialog fallback (100% reliable)
+    try {
+      final multiselect = allowMultiple ? '\$true' : '\$false';
+      final script = "Add-Type -AssemblyName System.Windows.Forms; \$f = New-Object System.Windows.Forms.OpenFileDialog; \$f.Multiselect = $multiselect; \$f.Title = 'Select Files'; if (\$f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \$f.FileNames | ForEach-Object { Write-Output \$_ } }";
+      final res = await Process.run('powershell', ['-NoProfile', '-Command', script]);
+      if (res.exitCode == 0) {
+        final lines = res.stdout.toString().split(RegExp(r'[\r\n]+')).where((s) => s.trim().isNotEmpty).toList();
+        return lines;
+      }
+    } catch (e) {
+      debugPrint("Native PowerShell FileDialog error: $e");
+    }
+    return [];
   }
 
   static Future<bool> renameCloudRepo(

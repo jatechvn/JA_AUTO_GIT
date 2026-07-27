@@ -1350,21 +1350,13 @@ class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
   }
 
   Future<void> _pickAssetFiles() async {
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        allowMultiple: true,
-        dialogTitle: widget.lang == 'vi' ? "Chọn tệp đính kèm Release" : "Select Release Attachments",
-      );
-      if (res != null) {
-        final paths = res.files.map((f) => f.path).whereType<String>().toList();
-        setState(() {
-          for (var p in paths) {
-            if (!_assetPaths.contains(p)) _assetPaths.add(p);
-          }
-        });
-      }
-    } catch (e) {
-      debugPrint("FilePicker error: $e");
+    final paths = await GitService.pickFilesNative(allowMultiple: true);
+    if (paths.isNotEmpty && mounted) {
+      setState(() {
+        for (var p in paths) {
+          if (!_assetPaths.contains(p)) _assetPaths.add(p);
+        }
+      });
     }
   }
 
