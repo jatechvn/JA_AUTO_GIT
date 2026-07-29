@@ -1,13 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:path/path.dart' as p;
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:flutter/foundation.dart';
-import 'package:file_picker/file_picker.dart';
-import 'scanner_service.dart';
-import 'settings_service.dart';
+import 'package:path/path.dart' as p;
+import 'system_service.dart';
 import '../utils/constants.dart';
 import '../modules/logger_config.dart';
+
 
 class GitService {
   static String findGitExecutable() {
@@ -63,15 +61,11 @@ class GitService {
       final currentDir = Directory.current.path;
 
       final bundledCandidates = [
-        p.join(exeDir, 'bin', 'gh.exe'),
-        p.join(exeDir, 'bin', 'git', 'cmd', 'gh.exe'),
-        p.join(exeDir, 'bin', 'git', 'usr', 'bin', 'gh.exe'),
         p.join(exeDir, 'bin', 'gh', 'bin', 'gh.exe'),
+        p.join(exeDir, 'bin', 'gh.exe'),
         p.join(exeDir, 'gh', 'gh.exe'),
-        p.join(currentDir, 'bin', 'gh.exe'),
-        p.join(currentDir, 'bin', 'git', 'cmd', 'gh.exe'),
-        p.join(currentDir, 'bin', 'git', 'usr', 'bin', 'gh.exe'),
         p.join(currentDir, 'bin', 'gh', 'bin', 'gh.exe'),
+        p.join(currentDir, 'bin', 'gh.exe'),
         p.join(currentDir, 'gh', 'gh.exe'),
       ];
 
@@ -114,21 +108,58 @@ class GitService {
       final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
       final res = await Process.run(gh, ['auth', 'status'], environment: env);
       return res.exitCode == 0;
-    } catch (_) {}
+    } catch (e) {
+      LoggerConfig.log("isGithubLoggedIn error: $e", level: 'DEBUG');
+    }
     return false;
   }
 
-  static Future<String?> getAuthenticatedUsername() async {
+  static Future<String> getGithubUsername() async {
+    try {
+      final gh = findGhExecutable();
+      final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+      final res = await Process.run(gh, ['api', 'user', '-q', '.login'], environment: env);
+      if (res.exitCode == 0) {
+        final uname = res.stdout.toString().trim();
+        if (uname.isNotEmpty) return uname;
+      }
+    } catch (e) {
+      LoggerConfig.log("getGithubUsername error: $e", level: 'DEBUG');
+    }
+    return '';
+  }
+
+  static Future<Map<String, String>> getGithubAccountInfo() async {
     try {
       final gh = findGhExecutable();
       final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
       final res = await Process.run(gh, ['api', 'user'], environment: env);
       if (res.exitCode == 0) {
-        final data = json.decode(res.stdout.toString());
-        return data['login']?.toString();
+        final Map<String, dynamic> data = json.decode(res.stdout.toString());
+        return {
+          'login': data['login']?.toString() ?? '',
+          'name': data['name']?.toString() ?? '',
+          'avatar': data['avatar_url']?.toString() ?? '',
+          'html_url': data['html_url']?.toString() ?? '',
+        };
       }
-    } catch (_) {}
-    return null;
+    } catch (e) {
+      LoggerConfig.log("getGithubAccountInfo error: $e", level: 'DEBUG');
+    }
+    return {};
+  }
+
+  static Future<bool> logoutGithub() async {
+    try {
+      final gh = findGhExecutable();
+      final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+      final res = await Process.run(gh, ['auth', 'logout', '--hostname', 'github.com'], environment: env);
+      LoggerConfig.log("logoutGithub exitCode: ${res.exitCode}", level: 'INFO');
+      return res.exitCode == 0;
+    } catch (e) {
+      LoggerConfig.log("logoutGithub error: $e", level: 'ERROR');
+      return false;
+    }
   }
 
   static Future<void> triggerGithubLogin() async {
@@ -148,11 +179,7 @@ class GitService {
         await Process.start(gh, ['auth', 'login', '-h', 'github.com', '-w'], environment: env);
       }
     } catch (_) {
-      try {
-        if (await canLaunchUrlString("https://github.com/login")) {
-          await launchUrlString("https://github.com/login");
-        }
-      } catch (_) {}
+        await SystemService.openUrl("https://github.com/login");
     }
   }
 
@@ -206,25 +233,18 @@ class GitService {
         if (pollData['access_token'] != null) {
           LoggerConfig.log("triggerGithubLoginGui: Got token!", level: 'INFO');
           // Token received, feed it to gh cli
-          final token = pollData['access_token'].toString().trim();
+          final token = pollData['access_token'];
           final process = await Process.start(
             gh, 
-            ['auth', 'login', '--with-token', '--hostname', 'github.com'], 
+            ['auth', 'login', '--with-token'], 
             environment: env,
-            runInShell: true,
+            runInShell: true
           );
-          process.stdout.transform(utf8.decoder).listen((d) => LoggerConfig.log("gh login stdout: $d", level: 'INFO'));
-          process.stderr.transform(utf8.decoder).listen((d) => LoggerConfig.log("gh login stderr: $d", level: 'ERROR'));
-
           process.stdin.writeln(token);
-          await process.stdin.flush();
           await process.stdin.close();
           final exitCode = await process.exitCode;
           LoggerConfig.log("GH Auth login exit code: $exitCode", level: 'INFO');
           return exitCode == 0;
-        } else if (pollData['error'] == 'slow_down') {
-          LoggerConfig.log("GH Auth poll slow_down: waiting extra 5s", level: 'INFO');
-          await Future.delayed(const Duration(seconds: 5));
         } else if (pollData['error'] != 'authorization_pending') {
           LoggerConfig.log("GH Auth poll error: ${pollData['error']}", level: 'ERROR');
           return false;
@@ -233,18 +253,6 @@ class GitService {
       return false;
     } catch (e) {
       LoggerConfig.log("GH Auth exception: $e", level: 'ERROR');
-      return false;
-    }
-  }
-
-  static Future<bool> logoutGithub() async {
-    try {
-      final gh = findGhExecutable();
-      final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
-      final res = await Process.run(gh, ['auth', 'logout', '--hostname', 'github.com'], environment: env);
-      return res.exitCode == 0;
-    } catch (e) {
-      LoggerConfig.log("Logout exception: $e", level: 'ERROR');
       return false;
     }
   }
@@ -574,24 +582,15 @@ class GitService {
             ? (repo['primaryLanguage'] as Map)['name']?.toString() ?? ''
             : '';
 
-        // Search locally in rootDir AND in SettingsService.appCloneDir
-        final appCloneDir = SettingsService.appCloneDir;
+        // Search locally
         String? localPath;
-        final searchBases = [
-          if (rootDir.isNotEmpty && Directory(rootDir).existsSync()) rootDir,
-          appCloneDir,
-        ];
         final subfolders = ["", "PROJECT_PY", "PROJECT_C#", "PROJECT_AHK", "PROJECT_JS", "PROJECT_PS1"];
-
-        for (var base in searchBases) {
-          for (var sf in subfolders) {
-            final cand = sf.isEmpty ? p.join(base, name) : p.join(base, sf, name);
-            if (Directory(cand).existsSync()) {
-              localPath = cand;
-              break;
-            }
+        for (var sf in subfolders) {
+          final cand = sf.isEmpty ? p.join(rootDir, name) : p.join(rootDir, sf, name);
+          if (Directory(cand).existsSync()) {
+            localPath = cand;
+            break;
           }
-          if (localPath != null) break;
         }
 
         String kind = 'project';
@@ -610,21 +609,42 @@ class GitService {
           }
         } else {
           final nameUpper = name.toUpperCase();
-          final langL = primaryLang.toLowerCase();
-          if (nameUpper.endsWith('_PY') || langL.contains('python')) {
+          String subfolder = '';
+          if (nameUpper.endsWith('_PY')) {
+            subfolder = "PROJECT_PY";
             kind = "python";
-          } else if (nameUpper.endsWith('_CS') || langL.contains('c#')) {
+          } else if (nameUpper.endsWith('_CS')) {
+            subfolder = "PROJECT_C#";
             kind = "c#";
-          } else if (nameUpper.endsWith('_AHK') || langL.contains('autohotkey') || langL.contains('ahk')) {
+          } else if (nameUpper.endsWith('_AHK')) {
+            subfolder = "PROJECT_AHK";
             kind = "ahk";
-          } else if (nameUpper.endsWith('_NODE') || langL.contains('javascript') || langL.contains('typescript') || langL.contains('node')) {
+          } else if (nameUpper.endsWith('_NODE')) {
+            subfolder = "PROJECT_JS";
             kind = "node";
-          } else if (nameUpper.endsWith('_PS1') || langL.contains('powershell') || langL.contains('batch')) {
+          } else if (nameUpper.endsWith('_PS1')) {
+            subfolder = "PROJECT_PS1";
             kind = "powershell";
+          } else if (primaryLang.isNotEmpty) {
+            final langL = primaryLang.toLowerCase();
+            if (langL.contains('python')) {
+              subfolder = "PROJECT_PY";
+              kind = "python";
+            } else if (langL.contains('c#')) {
+              subfolder = "PROJECT_C#";
+              kind = "c#";
+            } else if (langL.contains('autohotkey') || langL.contains('ahk')) {
+              subfolder = "PROJECT_AHK";
+              kind = "ahk";
+            } else if (langL.contains('javascript') || langL.contains('typescript') || langL.contains('node')) {
+              subfolder = "PROJECT_JS";
+              kind = "node";
+            } else if (langL.contains('powershell') || langL.contains('batch')) {
+              subfolder = "PROJECT_PS1";
+              kind = "powershell";
+            }
           }
-
-          // Target clone path for uncloned repositories is inside app's Clone subfolder
-          localPath = p.join(appCloneDir, name);
+          localPath = subfolder.isNotEmpty ? p.join(rootDir, subfolder, name) : p.join(rootDir, name);
         }
 
         String syncStatus = "Not Cloned";
@@ -681,97 +701,6 @@ class GitService {
     }
   }
 
-  static Future<bool> cloneCloudRepo(String repoUrl, String localPath, void Function(String) log) async {
-    final parentDir = p.dirname(localPath);
-    final parent = Directory(parentDir);
-    if (!parent.existsSync()) {
-      try {
-        parent.createSync(recursive: true);
-      } catch (e) {
-        log("[ERROR] Failed to create directory $parentDir: $e\n");
-        return false;
-      }
-    }
-
-    final git = findGitExecutable();
-    log("[INFO] Cloning $repoUrl into $localPath...\n");
-    final ok = await _runCommand(git, ['clone', repoUrl, p.basename(localPath)], parentDir, log);
-    return ok;
-  }
-
-  static Future<bool> pullCloudRepo(String localPath, void Function(String) log) async {
-    final git = findGitExecutable();
-    log("[INFO] Pulling updates for $localPath...\n");
-    final ok = await _runCommand(git, ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
-    return ok;
-  }
-
-  static Future<bool> deleteCloudRepo(String owner, String repoName, void Function(String) log) async {
-    final gh = findGhExecutable();
-    final repoSlug = "$owner/$repoName";
-    log("[INFO] Deleting repository $repoSlug from GitHub...\n");
-    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
-    final res = await Process.run(gh, ['repo', 'delete', repoSlug, '--yes'], environment: env);
-    if (res.stdout.toString().isNotEmpty) log(res.stdout.toString());
-    if (res.stderr.toString().isNotEmpty) log(res.stderr.toString());
-    return res.exitCode == 0;
-  }
-
-  static Future<bool> toggleRepoVisibility(String owner, String repoName, bool makePrivate, void Function(String) log) async {
-    final gh = findGhExecutable();
-    final repoSlug = "$owner/$repoName";
-    final visibility = makePrivate ? 'private' : 'public';
-    log("[INFO] Changing visibility of $repoSlug to $visibility...\n");
-    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
-    final res = await Process.run(gh, ['repo', 'edit', repoSlug, '--visibility', visibility, '--accept-visibility-change-consequences'], environment: env);
-    if (res.stdout.toString().isNotEmpty) log(res.stdout.toString());
-    if (res.stderr.toString().isNotEmpty) log(res.stderr.toString());
-    return res.exitCode == 0;
-  }
-
-  static Future<bool> deleteLocalGit(String localPath, void Function(String) log) async {
-    try {
-      final gitDir = Directory(p.join(localPath, '.git'));
-      if (gitDir.existsSync()) {
-        if (Platform.isWindows) {
-          await Process.run('cmd.exe', ['/c', 'attrib', '-r', '-h', '-s', '${gitDir.path}\\*.*', '/s', '/d']);
-        }
-        gitDir.deleteSync(recursive: true);
-        log("[OK] Deleted .git directory from $localPath\n");
-        return true;
-      }
-    } catch (e) {
-      log("[ERROR] Failed to delete .git directory: $e\n");
-    }
-    return false;
-  }
-
-  static Future<bool> deleteClonedDirectory(String localPath, void Function(String) log) async {
-    try {
-      final absPath = p.absolute(localPath);
-      final dir = Directory(absPath);
-      if (!dir.existsSync()) {
-        log("[WARN] Folder does not exist: $absPath\n");
-        return true;
-      }
-      log("[INFO] Removing local downloaded folder: $absPath...\n");
-      if (Platform.isWindows) {
-        await Process.run('attrib', ['-r', '-h', '-s', '$absPath\\*.*', '/s', '/d']);
-        final res = await Process.run('cmd.exe', ['/c', 'rmdir', '/s', '/q', absPath]);
-        if (res.exitCode == 0) {
-          log("[OK] Deleted local folder $absPath\n");
-          return true;
-        }
-      }
-      dir.deleteSync(recursive: true);
-      log("[OK] Deleted local folder $absPath\n");
-      return true;
-    } catch (e) {
-      log("[ERROR] Failed to delete local folder: $e\n");
-      return false;
-    }
-  }
-
   static Future<bool> syncCloudProject(Map<String, dynamic> task, void Function(String) log) async {
     final actionType = task['action_type'];
     final repoUrl = task['repo_url'];
@@ -784,23 +713,59 @@ class GitService {
     }
 
     if (actionType == "clone") {
-      return await cloneCloudRepo(repoUrl, localPath, log);
+      final parentDir = p.dirname(localPath);
+      final parent = Directory(parentDir);
+      if (!parent.existsSync()) {
+        try {
+          parent.createSync(recursive: true);
+          log("[INFO] Created parent directory: $parentDir\n");
+        } catch (e) {
+          log("[ERROR] Failed to create directory $parentDir: $e\n");
+          return false;
+        }
+      }
+
+      final cmd = ['git', 'clone', repoUrl, p.basename(localPath)];
+      log("\$ ${cmd.join(' ')} (in $parentDir)\n");
+      final process = await Process.run('git', ['clone', repoUrl, p.basename(localPath)], workingDirectory: parentDir);
+      
+      if (process.stdout.toString().isNotEmpty) log(process.stdout);
+      if (process.stderr.toString().isNotEmpty) log(process.stderr);
+
+      if (process.exitCode != 0) {
+        log("[ERROR] Failed to clone $repoName\n");
+        return false;
+      }
+
+      log("[OK] Successfully cloned $repoName to $localPath\n");
+      log("[INFO] Standardizing project layout for $repoName...\n");
+      try {
+        // Run fix git form
+        // Lazy-load git form service to avoid cyclic imports
+        final file = File(p.join(localPath, '.gitignore'));
+        if (file.existsSync()) {
+          // git standardizations
+          await Process.run('git', ['branch', '-M', AppConstants.defaultBranch], workingDirectory: localPath);
+        }
+      } catch (e) {
+        log("[WARN] Failed to standardize project layout: $e\n");
+      }
+      return true;
     } else if (actionType == "pull") {
       log("[INFO] Pulling updates for $repoName...\n");
-      return await pullCloudRepo(localPath, log);
+      return await _runCommand('git', ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
     } else if (actionType == "overwrite") {
       log("[WARN] Overwriting local changes for $repoName...\n");
-      final git = findGitExecutable();
-      await _runCommand(git, ['fetch', 'origin'], localPath, log);
-      final ok1 = await _runCommand(git, ['reset', '--hard', 'origin/${AppConstants.defaultBranch}'], localPath, log);
-      final ok2 = await _runCommand(git, ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
+      await _runCommand('git', ['fetch', 'origin'], localPath, log);
+      final ok1 = await _runCommand('git', ['reset', '--hard', 'origin/${AppConstants.defaultBranch}'], localPath, log);
+      final ok2 = await _runCommand('git', ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
       return ok1 && ok2;
     } else if (actionType == "stash") {
       log("[INFO] Stashing local changes and pulling for $repoName...\n");
-      final git = findGitExecutable();
-      await _runCommand(git, ['stash'], localPath, log);
-      final ok = await _runCommand(git, ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
-      await _runCommand(git, ['stash', 'pop'], localPath, log);
+      await _runCommand('git', ['stash'], localPath, log);
+      final ok = await _runCommand('git', ['pull', 'origin', AppConstants.defaultBranch], localPath, log);
+      await _runCommand('git', ['stash', 'pop'], localPath, log);
+      return ok;
     }
     return false;
   }
@@ -931,172 +896,6 @@ class GitService {
       log("[ERROR] Parse releases JSON: $e\n");
       return [];
     }
-  }
-
-  static Future<bool> createGithubRelease({
-    required String owner,
-    required String repoName,
-    required String tagName,
-    required String releaseTitle,
-    required String releaseNotes,
-    String targetBranch = 'main',
-    bool isDraft = false,
-    bool isPrerelease = false,
-    bool isLatest = true,
-    bool generateNotes = false,
-    List<String>? assetFilePaths,
-    required void Function(String) log,
-  }) async {
-    final gh = findGhExecutable();
-    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
-    final repoSlug = "$owner/$repoName";
-
-    log("[INFO] Publishing Release $tagName for $repoSlug (target: $targetBranch)...\n");
-
-    final cmdArgs = <String>[
-      'release',
-      'create',
-      tagName,
-      '--target',
-      targetBranch.isNotEmpty ? targetBranch : 'main',
-      '--title',
-      releaseTitle.isNotEmpty ? releaseTitle : tagName,
-      '-R',
-      repoSlug,
-    ];
-
-    if (generateNotes) {
-      cmdArgs.add('--generate-notes');
-    } else {
-      cmdArgs.addAll(['--notes', releaseNotes]);
-    }
-
-    if (isDraft) {
-      cmdArgs.add('--draft');
-    }
-    if (isPrerelease) {
-      cmdArgs.add('--prerelease');
-    }
-    if (isLatest && !isDraft && !isPrerelease) {
-      cmdArgs.add('--latest');
-    }
-
-    if (assetFilePaths != null && assetFilePaths.isNotEmpty) {
-      for (var f in assetFilePaths) {
-        if (File(f).existsSync()) {
-          cmdArgs.add(f);
-          log("[INFO] Attaching release asset file: $f\n");
-        }
-      }
-    }
-
-    log("\$ ${gh} ${cmdArgs.join(' ')}\n");
-    final res = await Process.run(gh, cmdArgs, environment: env);
-    if (res.stdout.toString().isNotEmpty) log(res.stdout.toString());
-    if (res.stderr.toString().isNotEmpty) log(res.stderr.toString());
-
-    if (res.exitCode == 0) {
-      log("[OK] Published Release $tagName for $repoSlug successfully!\n");
-      return true;
-    } else {
-      log("[ERROR] Failed to publish release: ${res.stderr}\n");
-      return false;
-    }
-  }
-
-  static Future<Map<String, String>> fetchGithubRepoDocs(String owner, String repoName) async {
-    final gh = findGhExecutable();
-    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
-    final Map<String, String> docs = {};
-
-    // 1. Fetch README.md from GitHub Cloud
-    try {
-      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/readme'], environment: env);
-      if (res.exitCode == 0) {
-        final data = json.decode(res.stdout);
-        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
-        if (contentB64.isNotEmpty) {
-          final decoded = utf8.decode(base64.decode(contentB64));
-          docs['readme'] = decoded;
-        }
-      }
-    } catch (_) {}
-
-    // 2. Fetch CHANGELOG.md from GitHub Cloud
-    try {
-      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/contents/CHANGELOG.md'], environment: env);
-      if (res.exitCode == 0) {
-        final data = json.decode(res.stdout);
-        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
-        if (contentB64.isNotEmpty) {
-          final decoded = utf8.decode(base64.decode(contentB64));
-          docs['changelog'] = decoded;
-        }
-      }
-    } catch (_) {}
-
-    // 3. Auto-generate Release Notes from GitHub API
-    try {
-      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/releases/generate-notes', '-f', 'tag_name=v1.0.0'], environment: env);
-      if (res.exitCode == 0) {
-        final data = json.decode(res.stdout);
-        final body = data['body']?.toString() ?? '';
-        if (body.isNotEmpty) {
-          docs['generated'] = body;
-        }
-      }
-    } catch (_) {}
-
-    // 4. Fetch recent commits summary
-    try {
-      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/commits?per_page=10'], environment: env);
-      if (res.exitCode == 0) {
-        final List<dynamic> commits = json.decode(res.stdout);
-        final lines = <String>[];
-        for (var c in commits) {
-          final msg = (c['commit']?['message']?.toString() ?? '').split('\n').first;
-          final sha = (c['sha']?.toString() ?? '').substring(0, 7);
-          if (msg.isNotEmpty) {
-            lines.add("- $msg ($sha)");
-          }
-        }
-        if (lines.isNotEmpty) {
-          docs['commits'] = "## Recent Changes\n${lines.join('\n')}";
-        }
-      }
-    } catch (_) {}
-
-    return docs;
-  }
-
-  static Future<List<String>> pickFilesNative({bool allowMultiple = true}) async {
-    // 1. Try FilePicker plugin first
-    try {
-      final res = await FilePicker.platform.pickFiles(
-        allowMultiple: allowMultiple,
-        type: FileType.any,
-      );
-      if (res != null) {
-        final paths = res.files.map((f) => f.path).whereType<String>().toList();
-        if (paths.isNotEmpty) return paths;
-      }
-    } catch (e) {
-      debugPrint("FilePicker plugin error: $e");
-    }
-
-    // 2. Native Windows PowerShell OpenFileDialog fallback (100% reliable)
-    try {
-      final multiselect = allowMultiple ? '\$true' : '\$false';
-      final script = "Add-Type -AssemblyName System.Windows.Forms; \$f = New-Object System.Windows.Forms.OpenFileDialog; \$f.Multiselect = $multiselect; \$f.Title = 'Select Files'; if (\$f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \$f.FileNames | ForEach-Object { Write-Output \$_ } }";
-      final res = await Process.run('powershell', ['-NoProfile', '-Command', script]);
-      if (res.exitCode == 0) {
-        final lines = res.stdout.toString().split(RegExp(r'[\r\n]+')).where((s) => s.trim().isNotEmpty).toList();
-        return lines;
-      }
-    } catch (e) {
-      debugPrint("Native PowerShell FileDialog error: $e");
-    }
-    return [];
   }
 
   static Future<bool> renameCloudRepo(
@@ -1252,6 +1051,161 @@ class GitService {
       return false;
     }
   }
+
+  static Future<bool> createGithubRelease({
+    required String owner,
+    required String repoName,
+    required String tagName,
+    required String releaseTitle,
+    required String releaseNotes,
+    String targetBranch = 'main',
+    bool isDraft = false,
+    bool isPrerelease = false,
+    bool isLatest = true,
+    bool generateNotes = false,
+    List<String>? assetFilePaths,
+    required void Function(String) log,
+  }) async {
+    final gh = findGhExecutable();
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+    final repoSlug = "$owner/$repoName";
+
+    log("[INFO] Publishing Release $tagName for $repoSlug (target: $targetBranch)...\n");
+
+    final cmdArgs = <String>[
+      'release',
+      'create',
+      tagName,
+      '--target',
+      targetBranch.isNotEmpty ? targetBranch : 'main',
+      '--title',
+      releaseTitle.isNotEmpty ? releaseTitle : tagName,
+      '-R',
+      repoSlug,
+    ];
+
+    if (generateNotes) {
+      cmdArgs.add('--generate-notes');
+    } else {
+      cmdArgs.addAll(['--notes', releaseNotes]);
+    }
+
+    if (isDraft) {
+      cmdArgs.add('--draft');
+    }
+    if (isPrerelease) {
+      cmdArgs.add('--prerelease');
+    }
+    if (isLatest && !isDraft && !isPrerelease) {
+      cmdArgs.add('--latest');
+    }
+
+    if (assetFilePaths != null && assetFilePaths.isNotEmpty) {
+      for (var f in assetFilePaths) {
+        if (File(f).existsSync()) {
+          cmdArgs.add(f);
+          log("[INFO] Attaching release asset file: $f\n");
+        }
+      }
+    }
+
+    log("\$ $gh ${cmdArgs.join(' ')}\n");
+    final res = await Process.run(gh, cmdArgs, environment: env);
+    if (res.stdout.toString().isNotEmpty) log(res.stdout.toString());
+    if (res.stderr.toString().isNotEmpty) log(res.stderr.toString());
+
+    if (res.exitCode == 0) {
+      log("[OK] Published Release $tagName for $repoSlug successfully!\n");
+      return true;
+    } else {
+      log("[ERROR] Failed to publish release: ${res.stderr}\n");
+      return false;
+    }
+  }
+
+  static Future<Map<String, String>> fetchGithubRepoDocs(String owner, String repoName) async {
+    final gh = findGhExecutable();
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+    final Map<String, String> docs = {};
+
+    // 1. Fetch README.md from GitHub Cloud
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/readme'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
+        if (contentB64.isNotEmpty) {
+          final decoded = utf8.decode(base64.decode(contentB64));
+          docs['readme'] = decoded;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fetch CHANGELOG.md from GitHub Cloud
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/contents/CHANGELOG.md'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final contentB64 = (data['content']?.toString() ?? '').replaceAll('\n', '').replaceAll('\r', '');
+        if (contentB64.isNotEmpty) {
+          final decoded = utf8.decode(base64.decode(contentB64));
+          docs['changelog'] = decoded;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Auto-generate Release Notes from GitHub API
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/releases/generate-notes', '-f', 'tag_name=v1.0.0'], environment: env);
+      if (res.exitCode == 0) {
+        final data = json.decode(res.stdout);
+        final body = data['body']?.toString() ?? '';
+        if (body.isNotEmpty) {
+          docs['generated'] = body;
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fetch recent commits summary
+    try {
+      final res = await Process.run(gh, ['api', 'repos/$owner/$repoName/commits?per_page=10'], environment: env);
+      if (res.exitCode == 0) {
+        final List<dynamic> commits = json.decode(res.stdout);
+        final lines = <String>[];
+        for (var c in commits) {
+          final msg = (c['commit']?['message']?.toString() ?? '').split('\n').first;
+          final sha = (c['sha']?.toString() ?? '').substring(0, 7);
+          if (msg.isNotEmpty) {
+            lines.add("- $msg ($sha)");
+          }
+        }
+        if (lines.isNotEmpty) {
+          docs['commits'] = "## Recent Changes\n${lines.join('\n')}";
+        }
+      }
+    } catch (_) {}
+
+    return docs;
+  }
+
+  static Future<List<String>> pickFilesNative({bool allowMultiple = true}) async {
+    if (Platform.isWindows) {
+      try {
+        final multiselect = allowMultiple ? '\$true' : '\$false';
+        final script =
+            "Add-Type -AssemblyName System.Windows.Forms; \$f = New-Object System.Windows.Forms.OpenFileDialog; \$f.Multiselect = $multiselect; \$f.Title = 'Select Files'; if (\$f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \$f.FileNames | ForEach-Object { Write-Output \$_ } }";
+        final res = await Process.run('powershell', ['-NoProfile', '-Command', script]);
+        if (res.exitCode == 0) {
+          final lines = res.stdout.toString().split(RegExp(r'[\r\n]+')).where((s) => s.trim().isNotEmpty).toList();
+          return lines;
+        }
+      } catch (e) {
+        debugPrint("Native PowerShell FileDialog error: $e");
+      }
+    }
+    return [];
+  }
+
 
   static Future<String> downloadAsset(String url, String filename, void Function(String) log) async {
     final home = Platform.isWindows

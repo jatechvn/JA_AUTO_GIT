@@ -11,7 +11,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../services/settings_service.dart';
 import '../../utils/windows_info.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'styles_win10.dart';
 import 'styles_win11.dart';
 
@@ -233,13 +232,13 @@ ThemeData buildThemeData(AppColors c) {
       onSurface: c.textPrimary,
       onError: c.textPrimary,
     ),
-    fontFamily: GoogleFonts.outfit().fontFamily,
+    fontFamily: 'Segoe UI',
     appBarTheme: AppBarTheme(
       backgroundColor: c.bgSecondary,
       foregroundColor: c.textPrimary,
       elevation: 0,
       titleTextStyle: TextStyle(
-        fontFamily: GoogleFonts.outfit().fontFamily,
+        fontFamily: 'Segoe UI',
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: c.textPrimary,
@@ -262,7 +261,7 @@ ThemeData buildThemeData(AppColors c) {
           borderRadius: BorderRadius.circular(6),
         ),
         textStyle: TextStyle(
-          fontFamily: GoogleFonts.outfit().fontFamily,
+          fontFamily: 'Segoe UI',
           fontWeight: FontWeight.w600,
           fontSize: 13,
         ),
@@ -277,7 +276,7 @@ ThemeData buildThemeData(AppColors c) {
           borderRadius: BorderRadius.circular(6),
         ),
         textStyle: TextStyle(
-          fontFamily: GoogleFonts.outfit().fontFamily,
+          fontFamily: 'Segoe UI',
           fontWeight: FontWeight.w600,
           fontSize: 13,
         ),
@@ -309,7 +308,7 @@ ThemeData buildThemeData(AppColors c) {
         side: BorderSide(color: c.borderDefault),
       ),
       titleTextStyle: TextStyle(
-        fontFamily: GoogleFonts.outfit().fontFamily,
+        fontFamily: 'Segoe UI',
         fontSize: 18,
         fontWeight: FontWeight.w600,
         color: c.textPrimary,

@@ -7,11 +7,8 @@ import '../../utils/constants.dart';
 import '../../utils/i18n.dart';
 import '../../utils/windows_info.dart';
 import '../../services/git_service.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:desktop_drop/desktop_drop.dart';
-import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher_string.dart';
+import '../../services/system_service.dart';
 import 'styles.dart';
 import '../../services/settings_service.dart';
 
@@ -40,8 +37,8 @@ class GlassDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.appColors;
     final settings = SettingsService.loadSettings();
-    final double sigma = blurSigma ?? (settings['dialog_blur'] ?? 2.0);
-    final double opacity = bgOpacity ?? (settings['dialog_opacity'] ?? 0.8);
+    final double sigma = blurSigma ?? (settings['dialog_blur'] ?? 12.0);
+    final double opacity = bgOpacity ?? (settings['dialog_opacity'] ?? 0.45);
 
     final enableTransparency = Platform.isWindows && WindowsInfo.isWindows11OrGreater;
     final bg = enableTransparency ? c.bgSecondary.withOpacity(opacity) : c.bgSecondary;
@@ -380,10 +377,8 @@ class _GithubAuthGuiDialogState extends State<GithubAuthGuiDialog> {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 onPressed: () async {
-                  if (_oneTimeCode != null) {
-                    await Clipboard.setData(ClipboardData(text: _oneTimeCode!));
-                  }
-                  await openUrlHelper("https://github.com/login/device");
+                  await Clipboard.setData(ClipboardData(text: _oneTimeCode!));
+                  await SystemService.openUrl("https://github.com/login/device");
                 },
               ),
             ),
@@ -443,8 +438,8 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
 
     _bgBlur = (widget.settings['bg_blur'] as num?)?.toDouble() ?? 10.0;
     _bgOpacity = (widget.settings['bg_opacity'] as num?)?.toDouble() ?? 0.6;
-    _dialogBlur = (widget.settings['dialog_blur'] as num?)?.toDouble() ?? 2.0;
-    _dialogOpacity = (widget.settings['dialog_opacity'] as num?)?.toDouble() ?? 0.8;
+    _dialogBlur = (widget.settings['dialog_blur'] as num?)?.toDouble() ?? 12.0;
+    _dialogOpacity = (widget.settings['dialog_opacity'] as num?)?.toDouble() ?? 0.45;
   }
 
   @override
@@ -464,8 +459,8 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
       _repoPublic = false;
       _bgBlur = 10.0;
       _bgOpacity = 0.6;
-      _dialogBlur = 2.0;
-      _dialogOpacity = 0.8;
+      _dialogBlur = 12.0;
+      _dialogOpacity = 0.45;
     });
   }
 
@@ -1188,826 +1183,131 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
   }
 }
 
-/// Full-Featured Publish Release Dialog for GitHub Cloud with Auto-Read CHANGELOG/README
-class PublishReleaseDialog extends StatefulWidget {
-  final String repoName;
-  final String owner;
-  final String? localPath;
+/// GitHub Account Switcher & Logout Dialog
+class GithubAccountDialog extends StatefulWidget {
   final bool isDark;
   final String lang;
+  final Map<String, String> accountInfo;
 
-  const PublishReleaseDialog({
+  const GithubAccountDialog({
     Key? key,
-    required this.repoName,
-    required this.owner,
-    this.localPath,
     required this.isDark,
     required this.lang,
+    required this.accountInfo,
   }) : super(key: key);
 
   @override
-  State<PublishReleaseDialog> createState() => _PublishReleaseDialogState();
+  State<GithubAccountDialog> createState() => _GithubAccountDialogState();
 }
 
-class _PublishReleaseDialogState extends State<PublishReleaseDialog> {
-  late TextEditingController _tagCtrl;
-  late TextEditingController _targetCtrl;
-  late TextEditingController _titleCtrl;
-  late TextEditingController _notesCtrl;
-
-  final List<String> _assetPaths = [];
-  String _releaseLabel = 'latest'; // 'none', 'prerelease', 'latest', 'draft'
-  bool _generateNotesAuto = false;
-  bool _isPreviewMode = false;
-  bool _isDraggingFile = false;
-
-  bool _isLoadingDocs = false;
-  String? _detectedReadme;
-  String? _detectedChangelog;
-  String? _detectedGenerated;
-  String? _detectedCommits;
-
-  @override
-  void initState() {
-    super.initState();
-    _tagCtrl = TextEditingController(text: "v1.0.0");
-    _targetCtrl = TextEditingController(text: "main");
-    _titleCtrl = TextEditingController(text: "Release v1.0.0");
-    _notesCtrl = TextEditingController(text: "");
-
-    _detectLocalAndRemoteDocs();
-  }
-
-  Future<void> _detectLocalAndRemoteDocs() async {
-    _detectLocalDocsAndVersion();
-
-    setState(() => _isLoadingDocs = true);
-    try {
-      final docs = await GitService.fetchGithubRepoDocs(widget.owner, widget.repoName);
-      if (mounted) {
-        setState(() {
-          _isLoadingDocs = false;
-          if (docs.containsKey('changelog')) _detectedChangelog = docs['changelog'];
-          if (docs.containsKey('readme')) _detectedReadme = docs['readme'];
-          if (docs.containsKey('generated')) _detectedGenerated = docs['generated'];
-          if (docs.containsKey('commits')) _detectedCommits = docs['commits'];
-
-          // Auto fill notes if currently empty or default
-          if (_notesCtrl.text.isEmpty || _notesCtrl.text.startsWith("Initial release notes")) {
-            if (_detectedChangelog != null && _detectedChangelog!.isNotEmpty) {
-              _notesCtrl.text = _detectedChangelog!;
-            } else if (_detectedGenerated != null && _detectedGenerated!.isNotEmpty) {
-              _notesCtrl.text = _detectedGenerated!;
-            } else if (_detectedCommits != null && _detectedCommits!.isNotEmpty) {
-              _notesCtrl.text = _detectedCommits!;
-            } else if (_detectedReadme != null && _detectedReadme!.isNotEmpty) {
-              _notesCtrl.text = _detectedReadme!;
-            }
-          }
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingDocs = false);
-    }
-  }
-
-  void _detectLocalDocsAndVersion() {
-    final lp = widget.localPath;
-    if (lp == null || lp.isEmpty) return;
-    final dir = Directory(lp);
-    if (!dir.existsSync()) return;
-
-    // 1. Try to read version
-    String? foundVersion;
-    final pubspec = File(p.join(lp, 'pubspec.yaml'));
-    if (pubspec.existsSync()) {
-      try {
-        final content = pubspec.readAsStringSync();
-        final match = RegExp(r'version:\s*([0-9\.\+a-zA-Z\-]+)').firstMatch(content);
-        if (match != null) {
-          foundVersion = match.group(1)?.split('+')[0];
-        }
-      } catch (_) {}
-    }
-
-    if (foundVersion == null) {
-      final pkgJson = File(p.join(lp, 'package.json'));
-      if (pkgJson.existsSync()) {
-        try {
-          final content = pkgJson.readAsStringSync();
-          final match = RegExp(r'"version":\s*"([^"]+)"').firstMatch(content);
-          if (match != null) foundVersion = match.group(1);
-        } catch (_) {}
-      }
-    }
-
-    if (foundVersion != null && foundVersion.isNotEmpty) {
-      final tag = foundVersion.startsWith('v') ? foundVersion : 'v$foundVersion';
-      _tagCtrl.text = tag;
-      _titleCtrl.text = "Release $tag";
-    }
-
-    // 2. Try to read CHANGELOG.md & README.md
-    final changelogFile = [
-      File(p.join(lp, 'CHANGELOG.md')),
-      File(p.join(lp, 'changelog.md')),
-      File(p.join(lp, 'CHANGELOG')),
-    ].firstWhere((f) => f.existsSync(), orElse: () => File(''));
-
-    if (changelogFile.path.isNotEmpty) {
-      try {
-        _detectedChangelog = changelogFile.readAsStringSync();
-      } catch (_) {}
-    }
-
-    final readmeFile = [
-      File(p.join(lp, 'README.md')),
-      File(p.join(lp, 'readme.md')),
-      File(p.join(lp, 'README')),
-    ].firstWhere((f) => f.existsSync(), orElse: () => File(''));
-
-    if (readmeFile.path.isNotEmpty) {
-      try {
-        _detectedReadme = readmeFile.readAsStringSync();
-      } catch (_) {}
-    }
-
-    // Auto-populate notes if available
-    if (_detectedChangelog != null && _detectedChangelog!.trim().isNotEmpty) {
-      _notesCtrl.text = _detectedChangelog!.trim();
-    } else if (_detectedReadme != null && _detectedReadme!.trim().isNotEmpty) {
-      _notesCtrl.text = _detectedReadme!.trim();
-    } else {
-      _notesCtrl.text = "Initial release notes for ${widget.repoName}";
-    }
-  }
-
-  @override
-  void dispose() {
-    _tagCtrl.dispose();
-    _targetCtrl.dispose();
-    _titleCtrl.dispose();
-    _notesCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickAssetFiles() async {
-    final paths = await GitService.pickFilesNative(allowMultiple: true);
-    if (paths.isNotEmpty && mounted) {
-      setState(() {
-        for (var p in paths) {
-          if (!_assetPaths.contains(p)) _assetPaths.add(p);
-        }
-      });
-    }
-  }
+class _GithubAccountDialogState extends State<GithubAccountDialog> {
+  bool _isProcessing = false;
 
   @override
   Widget build(BuildContext context) {
-    final c = context.appColors;
+    final username = widget.accountInfo['login'] ?? 'Unknown User';
+    final name = widget.accountInfo['name'] ?? '';
     final isVi = widget.lang == 'vi';
 
     return GlassDialog(
-      title: isVi ? "TẠO BẢN PHÁT HÀNH MỚI (NEW RELEASE) - ${widget.repoName}" : "NEW RELEASE - ${widget.repoName}",
+      title: isVi ? "QUẢN LÝ TÀI KHOẢN GITHUB" : "GITHUB ACCOUNT MANAGEMENT",
+      width: 460,
+      height: 300,
       isDark: widget.isDark,
-      width: 680,
-      height: 640,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Row 1: Tag & Target Branch
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: TextField(
-                            controller: _tagCtrl,
-                            style: TextStyle(color: c.textPrimary, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: isVi ? "Tag Version (Ví dụ: v1.0.0)" : "Tag (e.g. v1.0.0)",
-                              labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
-                              prefixIcon: const Icon(Icons.sell_outlined, size: 16, color: AppConstants.accentCyan),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            controller: _targetCtrl,
-                            style: TextStyle(color: c.textPrimary, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: isVi ? "Nhánh mục tiêu (Target)" : "Target Branch",
-                              labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
-                              prefixIcon: const Icon(Icons.account_tree_outlined, size: 16, color: Colors.amber),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Release Title with Paste Icon
-                    TextField(
-                      controller: _titleCtrl,
-                      style: TextStyle(color: c.textPrimary, fontSize: 13),
-                      decoration: InputDecoration(
-                        labelText: isVi ? "Tiêu đề Release (Release title)" : "Release title",
-                        labelStyle: TextStyle(color: c.textMuted, fontSize: 11),
-                        prefixIcon: const Icon(Icons.title, size: 16, color: AppConstants.accentGreen),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.content_paste, size: 16, color: AppConstants.accentCyan),
-                          tooltip: isVi ? "Dán từ Clipboard" : "Paste from Clipboard",
-                          onPressed: () async {
-                            final data = await Clipboard.getData(Clipboard.kTextPlain);
-                            if (data?.text != null && data!.text!.isNotEmpty) {
-                              setState(() => _titleCtrl.text = data.text!);
-                            }
-                          },
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Quick Auto-fill Toolbar
-                    Row(
-                      children: [
-                        Text(
-                          isVi ? "Tự động điền:" : "Auto fill from:",
-                          style: TextStyle(color: c.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 8),
-                        if (_isLoadingDocs) ...[
-                          const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppConstants.accentCyan)),
-                          const SizedBox(width: 6),
-                          Text(isVi ? "Đang tải GitHub..." : "Fetching GitHub docs...", style: TextStyle(color: c.textMuted, fontSize: 10)),
-                        ],
-                        if (_detectedChangelog != null) ...[
-                          const SizedBox(width: 6),
-                          ActionChip(
-                            avatar: const Icon(Icons.history_edu, size: 13, color: AppConstants.accentCyan),
-                            label: const Text("CHANGELOG.md", style: TextStyle(fontSize: 10, color: AppConstants.accentCyan)),
-                            backgroundColor: AppConstants.accentCyan.withOpacity(0.12),
-                            onPressed: () => setState(() => _notesCtrl.text = _detectedChangelog!),
-                          ),
-                        ],
-                        if (_detectedReadme != null) ...[
-                          const SizedBox(width: 6),
-                          ActionChip(
-                            avatar: const Icon(Icons.menu_book_outlined, size: 13, color: Colors.greenAccent),
-                            label: const Text("README.md", style: TextStyle(fontSize: 10, color: Colors.greenAccent)),
-                            backgroundColor: Colors.green.withOpacity(0.12),
-                            onPressed: () => setState(() => _notesCtrl.text = _detectedReadme!),
-                          ),
-                        ],
-                        if (_detectedCommits != null) ...[
-                          const SizedBox(width: 6),
-                          ActionChip(
-                            avatar: const Icon(Icons.list_alt, size: 13, color: Colors.orangeAccent),
-                            label: Text(isVi ? "Git Commits" : "Git Commits", style: const TextStyle(fontSize: 10, color: Colors.orangeAccent)),
-                            backgroundColor: Colors.orange.withOpacity(0.12),
-                            onPressed: () => setState(() => _notesCtrl.text = _detectedCommits!),
-                          ),
-                        ],
-                        const SizedBox(width: 6),
-                        ActionChip(
-                          avatar: const Icon(Icons.auto_awesome, size: 13, color: Colors.amber),
-                          label: Text(isVi ? "GitHub AI Notes" : "Generate Notes", style: const TextStyle(fontSize: 10, color: Colors.amber)),
-                          backgroundColor: Colors.amber.withOpacity(0.12),
-                          onPressed: () {
-                            if (_detectedGenerated != null) {
-                              setState(() => _notesCtrl.text = _detectedGenerated!);
-                            } else {
-                              setState(() => _generateNotesAuto = !_generateNotesAuto);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Release Notes Tabs (Write / Preview) with Paste Icon
-                    Row(
-                      children: [
-                        InkWell(
-                          onTap: () => setState(() => _isPreviewMode = false),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: !_isPreviewMode ? c.bgSecondary : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: !_isPreviewMode ? AppConstants.accentCyan : Colors.transparent),
-                            ),
-                            child: Text(isVi ? "Viết (Write)" : "Write", style: TextStyle(color: !_isPreviewMode ? AppConstants.accentCyan : c.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        InkWell(
-                          onTap: () => setState(() => _isPreviewMode = true),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: _isPreviewMode ? c.bgSecondary : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: _isPreviewMode ? AppConstants.accentCyan : Colors.transparent),
-                            ),
-                            child: Text(isVi ? "Xem trước (Preview)" : "Preview", style: TextStyle(color: _isPreviewMode ? AppConstants.accentCyan : c.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.content_paste_go, size: 16, color: AppConstants.accentCyan),
-                          tooltip: isVi ? "Dán nội dung từ Clipboard vào khung viết" : "Paste Notes from Clipboard",
-                          onPressed: () async {
-                            final data = await Clipboard.getData(Clipboard.kTextPlain);
-                            if (data?.text != null && data!.text!.isNotEmpty) {
-                              setState(() => _notesCtrl.text = data.text!);
-                            }
-                          },
-                        ),
-                        const Spacer(),
-                        if (_generateNotesAuto)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              isVi ? "⚡ Đang bật tự tạo Release Notes từ Git Commits" : "⚡ Auto-generate Release Notes enabled",
-                              style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    if (!_isPreviewMode)
-                      TextField(
-                        controller: _notesCtrl,
-                        maxLines: 6,
-                        style: TextStyle(color: c.textPrimary, fontSize: 12, fontFamily: AppConstants.fontMono),
-                        decoration: InputDecoration(
-                          hintText: isVi ? "Mô tả các thay đổi trong bản phát hành này (Hỗ trợ Markdown)..." : "Describe this release (Markdown supported)...",
-                          hintStyle: TextStyle(color: c.textMuted, fontSize: 11),
-                          alignLabelWithHint: true,
-                          contentPadding: const EdgeInsets.all(12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        height: 160,
-                        decoration: BoxDecoration(
-                          color: c.bgSecondary,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.4)),
-                        ),
-                        child: MarkdownPreviewWidget(
-                          text: _notesCtrl.text,
-                          isDark: widget.isDark,
-                        ),
-                      ),
-                    const SizedBox(height: 14),
-
-                    // Attach Binaries / Assets with Drag & Drop Support
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isVi ? "Đính kèm file binaries/assets (Kéo & thả hoặc bấm nút):" : "Attach binaries by drag & drop or select files:",
-                          style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppConstants.accentCyan.withOpacity(0.18),
-                            foregroundColor: AppConstants.accentCyan,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            minimumSize: Size.zero,
-                          ),
-                          icon: const Icon(Icons.add_link, size: 14, color: AppConstants.accentCyan),
-                          label: Text(isVi ? "Thêm Tệp File..." : "Attach File...", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                          onPressed: _pickAssetFiles,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    DropTarget(
-                      onDragEntered: (detail) {
-                        setState(() => _isDraggingFile = true);
-                      },
-                      onDragExited: (detail) {
-                        setState(() => _isDraggingFile = false);
-                      },
-                      onDragDone: (detail) {
-                        setState(() => _isDraggingFile = false);
-                        final paths = detail.files.map((f) => f.path).where((p) => p.isNotEmpty).toList();
-                        if (paths.isNotEmpty) {
-                          setState(() {
-                            for (var p in paths) {
-                              if (!_assetPaths.contains(p)) _assetPaths.add(p);
-                            }
-                          });
-                        }
-                      },
-                      child: InkWell(
-                        onTap: _pickAssetFiles,
-                        borderRadius: BorderRadius.circular(8),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: _isDraggingFile ? AppConstants.accentCyan.withOpacity(0.15) : c.bgSecondary,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _isDraggingFile
-                                  ? AppConstants.accentCyan
-                                  : (_assetPaths.isNotEmpty ? AppConstants.accentCyan.withOpacity(0.6) : c.borderDefault),
-                              width: _isDraggingFile ? 2 : 1,
-                            ),
-                          ),
-                          child: _assetPaths.isEmpty
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      _isDraggingFile ? Icons.file_download : Icons.cloud_upload_outlined,
-                                      size: 22,
-                                      color: _isDraggingFile ? Colors.amber : AppConstants.accentCyan,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _isDraggingFile
-                                          ? (isVi ? "Thả tệp vào đây để đính kèm!" : "Drop files here to attach!")
-                                          : (isVi
-                                              ? "Kéo & thả file vào đây hoặc bấm để chọn tệp (.exe, .zip, .apk...)"
-                                              : "Drag & drop files here or click to attach (.exe, .zip, .apk...)"),
-                                      style: TextStyle(
-                                        color: _isDraggingFile ? Colors.amber : c.textMuted,
-                                        fontSize: 11,
-                                        fontWeight: _isDraggingFile ? FontWeight.bold : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    if (_isDraggingFile)
-                                      Container(
-                                        margin: const EdgeInsets.only(bottom: 8),
-                                        padding: const EdgeInsets.symmetric(vertical: 4),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            const Icon(Icons.file_download, size: 16, color: Colors.amber),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              isVi ? "Thả để thêm tệp mới!" : "Drop to add new files!",
-                                              style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ..._assetPaths.map((ap) {
-                                      final filename = p.basename(ap);
-                                      final file = File(ap);
-                                      final sizeMb = file.existsSync() ? (file.lengthSync() / 1024 / 1024).toStringAsFixed(2) : "0";
-
-                                      return Container(
-                                        margin: const EdgeInsets.only(bottom: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                        decoration: BoxDecoration(
-                                          color: c.bgCard,
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.insert_drive_file_outlined, size: 16, color: AppConstants.accentCyan),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text("$filename (${sizeMb} MB)", style: TextStyle(color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.bold)),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(),
-                                              onPressed: () => setState(() => _assetPaths.remove(ap)),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    // Release Label options (None, Pre-release, Latest, Save Draft)
-                    Text(
-                      isVi ? "Nhãn Release (Release type / label):" : "Release label / type:",
-                      style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        _buildLabelOption('latest', isVi ? "Mới nhất (Latest)" : "Set as latest release", Colors.green),
-                        const SizedBox(width: 8),
-                        _buildLabelOption('prerelease', isVi ? "Thử nghiệm (Pre-release)" : "Set as pre-release", Colors.amber),
-                        const SizedBox(width: 8),
-                        _buildLabelOption('draft', isVi ? "Bản nháp (Save draft)" : "Save as draft", Colors.blueAccent),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppConstants.accentCyan.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppConstants.accentCyan.withOpacity(0.3)),
             ),
-
-            const SizedBox(height: 12),
-
-            // Dialog Footer Actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            child: Row(
               children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(isVi ? "Hủy" : "Cancel", style: TextStyle(color: c.textMuted)),
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppConstants.accentCyan.withOpacity(0.2),
+                  child: const Icon(Icons.person, color: AppConstants.accentCyan, size: 28),
                 ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _releaseLabel == 'draft' ? Colors.blueAccent : AppConstants.accentCyan,
-                    foregroundColor: _releaseLabel == 'draft' ? Colors.white : Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        username,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                      ),
+                      if (name.isNotEmpty)
+                        Text(
+                          name,
+                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: AppConstants.accentGreen, size: 12),
+                          const SizedBox(width: 4),
+                          Text(
+                            isVi ? "Đã xác thực thành công" : "Authenticated & Connected",
+                            style: const TextStyle(color: AppConstants.accentGreen, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  icon: Icon(_releaseLabel == 'draft' ? Icons.save_outlined : Icons.publish, size: 16),
-                  label: Text(
-                    _releaseLabel == 'draft'
-                        ? (isVi ? "LƯU DRAFT" : "SAVE DRAFT")
-                        : (isVi ? "PHÁT HÀNH RELEASE" : "PUBLISH RELEASE"),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                  onPressed: () {
-                    final tag = _tagCtrl.text.trim();
-                    if (tag.isEmpty) return;
-
-                    Navigator.pop(context, {
-                      "tag": tag,
-                      "targetBranch": _targetCtrl.text.trim(),
-                      "title": _titleCtrl.text.trim(),
-                      "notes": _notesCtrl.text.trim(),
-                      "generateNotes": _generateNotesAuto,
-                      "isDraft": _releaseLabel == 'draft',
-                      "isPrerelease": _releaseLabel == 'prerelease',
-                      "isLatest": _releaseLabel == 'latest',
-                      "assetPaths": _assetPaths,
-                    });
-                  },
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLabelOption(String key, String label, Color activeColor) {
-    final selected = _releaseLabel == key;
-    return InkWell(
-      onTap: () => setState(() => _releaseLabel = key),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? activeColor.withOpacity(0.18) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: selected ? activeColor : context.appColors.borderDefault),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 14,
-              color: selected ? activeColor : context.appColors.textMuted,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? activeColor : context.appColors.textSecondary,
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Custom Formatted Markdown & HTML Preview Widget for Release Notes
-class MarkdownPreviewWidget extends StatelessWidget {
-  final String text;
-  final bool isDark;
-
-  const MarkdownPreviewWidget({
-    Key? key,
-    required this.text,
-    required this.isDark,
-  }) : super(key: key);
-
-  String _cleanHtml(String raw) {
-    var s = raw;
-    s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    s = s.replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '');
-    s = s.replaceAll(RegExp(r'</?[bi]>', caseSensitive: false), '');
-    return s.trim();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.appColors;
-    final cleaned = _cleanHtml(text);
-    final lines = cleaned.split('\n');
-
-    if (cleaned.isEmpty) {
-      return Center(
-        child: Text(
-          "(Preview is empty / Chưa có nội dung xem trước)",
-          style: TextStyle(color: c.textMuted, fontSize: 11, fontStyle: FontStyle.italic),
-        ),
-      );
-    }
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: lines.map((line) {
-          final trimmed = line.trim();
-
-          // Heading 1 (# Heading)
-          if (trimmed.startsWith('# ')) {
-            final content = trimmed.substring(2).replaceAll('**', '').replaceAll('*', '');
-            return Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 8),
-              padding: const EdgeInsets.only(bottom: 4),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppConstants.accentCyan, width: 1.5)),
-              ),
-              child: Text(
-                content,
-                style: const TextStyle(
-                  color: AppConstants.accentCyan,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          }
-
-          // Heading 2 (## Heading)
-          if (trimmed.startsWith('## ')) {
-            final content = trimmed.substring(3).replaceAll('**', '').replaceAll('*', '');
-            return Container(
-              margin: const EdgeInsets.only(top: 8, bottom: 6),
-              child: Text(
-                content,
-                style: const TextStyle(
-                  color: Colors.greenAccent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          }
-
-          // Heading 3 (### Heading)
-          if (trimmed.startsWith('### ')) {
-            final content = trimmed.substring(4).replaceAll('**', '').replaceAll('*', '');
-            return Container(
-              margin: const EdgeInsets.only(top: 6, bottom: 4),
-              child: Text(
-                content,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          }
-
-          // Bullet list (- Item or * Item)
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            final content = trimmed.substring(2);
-            return Padding(
-              padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("• ", style: TextStyle(color: AppConstants.accentCyan, fontSize: 13, fontWeight: FontWeight.bold)),
-                  Expanded(
-                    child: _buildRichLine(content, c),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Blockquote (> Quote)
-          if (trimmed.startsWith('> ')) {
-            final content = trimmed.substring(2);
-            return Container(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.only(left: 10, top: 4, bottom: 4),
-              decoration: const BoxDecoration(
-                border: Border(left: BorderSide(color: Colors.amber, width: 3)),
-              ),
-              child: Text(
-                content,
-                style: TextStyle(color: c.textSecondary, fontSize: 11, fontStyle: FontStyle.italic),
-              ),
-            );
-          }
-
-          // Empty line spacing
-          if (trimmed.isEmpty) {
-            return const SizedBox(height: 6);
-          }
-
-          // Regular paragraph line
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 3),
-            child: _buildRichLine(trimmed, c),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildRichLine(String line, AppColors c) {
-    // Parse bold text **bold**
-    final parts = <TextSpan>[];
-    final regExp = RegExp(r'\*\*(.*?)\*\*|`([^`]+)`');
-    int lastMatchEnd = 0;
-
-    for (final match in regExp.allMatches(line)) {
-      if (match.start > lastMatchEnd) {
-        parts.add(TextSpan(text: line.substring(lastMatchEnd, match.start)));
-      }
-      if (match.group(1) != null) {
-        // Bold
-        parts.add(TextSpan(
-          text: match.group(1),
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ));
-      } else if (match.group(2) != null) {
-        // Code
-        parts.add(TextSpan(
-          text: " ${match.group(2)} ",
-          style: const TextStyle(
-            fontFamily: AppConstants.fontMono,
-            backgroundColor: Color(0xFF222831),
-            color: AppConstants.accentCyan,
-            fontSize: 11,
           ),
-        ));
-      }
-      lastMatchEnd = match.end;
-    }
-
-    if (lastMatchEnd < line.length) {
-      parts.add(TextSpan(text: line.substring(lastMatchEnd)));
-    }
-
-    return RichText(
-      text: TextSpan(
-        style: TextStyle(color: c.textPrimary, fontSize: 12, height: 1.4),
-        children: parts,
+          const SizedBox(height: 24),
+          if (_isProcessing)
+            const CircularProgressIndicator(color: AppConstants.accentCyan)
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      setState(() => _isProcessing = true);
+                      await GitService.logoutGithub();
+                      if (mounted) {
+                        Navigator.of(context).pop('switch');
+                      }
+                    },
+                    icon: const Icon(Icons.sync_alt_rounded, size: 16),
+                    label: Text(isVi ? "Đổi tài khoản" : "Switch Account"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppConstants.accentCyan,
+                      side: BorderSide(color: AppConstants.accentCyan.withOpacity(0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      setState(() => _isProcessing = true);
+                      await GitService.logoutGithub();
+                      if (mounted) {
+                        Navigator.of(context).pop('logout');
+                      }
+                    },
+                    icon: const Icon(Icons.logout_rounded, size: 16),
+                    label: Text(isVi ? "Đăng xuất" : "Log Out"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withOpacity(0.8),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }

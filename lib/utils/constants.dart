@@ -1,47 +1,25 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
 /// Helper function to open URLs in default web browser reliably across all platforms
 Future<void> openUrlHelper(String url) async {
   if (url.isEmpty) return;
   try {
-    final launched = await launchUrlString(url, mode: LaunchMode.externalApplication);
-    if (launched) return;
-  } catch (_) {}
-
-  if (Platform.isWindows) {
-    try {
+    if (Platform.isWindows) {
       await Process.run('cmd', ['/c', 'start', '', url]);
-    } catch (_) {}
+    } else if (Platform.isMacOS) {
+      await Process.run('open', [url]);
+    } else if (Platform.isLinux) {
+      await Process.run('xdg-open', [url]);
+    }
+  } catch (e) {
+    debugPrint('openUrlHelper error: $e');
   }
 }
 
-/// Helper function to pick a directory path with automatic Windows PowerShell fallback
+/// Helper function to pick a directory path using Windows PowerShell FolderBrowserDialog
 Future<String?> pickDirectoryPath({String? initialDirectory}) async {
-  // 1. Try native FilePicker first
-  try {
-    String? initDir;
-    if (initialDirectory != null && initialDirectory.trim().isNotEmpty) {
-      final dir = Directory(initialDirectory.trim());
-      if (dir.existsSync()) {
-        initDir = dir.path;
-      }
-    }
-    final selected = await FilePicker.platform.getDirectoryPath(
-      initialDirectory: initDir,
-      dialogTitle: 'Select Target Root Directory',
-    );
-    if (selected != null && selected.trim().isNotEmpty) {
-      return selected.trim();
-    }
-  } catch (e) {
-    debugPrint('FilePicker error: $e');
-  }
-
-  // 2. Windows fallback using PowerShell FolderBrowserDialog with UTF-8 encoding
   if (Platform.isWindows) {
     try {
       final initialPath = (initialDirectory != null && initialDirectory.trim().isNotEmpty && Directory(initialDirectory.trim()).existsSync())
@@ -74,6 +52,7 @@ if (\$dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   }
   return null;
 }
+
 
 class AppConstants {
   static const String appId = "JA_AUTO_GIT";

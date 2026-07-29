@@ -1,11 +1,14 @@
 // lib/modules/logger_config.dart
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class LoggerConfig {
   static final List<String> _inMemoryLogs = [];
   static File? _logFile;
+  static bool isDebugMode = kDebugMode;
 
-  static void init() {
+  static void init({bool debug = false}) {
+    isDebugMode = debug || kDebugMode || Platform.environment.containsKey('DEBUG');
     try {
       final now = DateTime.now();
       final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
@@ -14,16 +17,27 @@ class LoggerConfig {
         logDir.createSync(recursive: true);
       }
       _logFile = File('logs/$dateStr.log');
+      log("Logger initialized (DebugMode: $isDebugMode)", level: 'SYSTEM');
     } catch (_) {}
   }
 
-  static void log(String message, {String level = 'INFO'}) {
+  static void log(String message, {String level = 'INFO', Object? error, StackTrace? stackTrace}) {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
-    final formatted = '[$timestamp] [$level] $message';
+    var formatted = '[$timestamp] [$level] $message';
+    
+    if (error != null && isDebugMode) {
+      formatted += ' | Error: $error';
+    }
+    if (stackTrace != null && isDebugMode) {
+      formatted += '\nStackTrace: $stackTrace';
+    }
+
     _inMemoryLogs.add(formatted);
     
     // Print to stdout
-    print(formatted);
+    if (isDebugMode || level == 'ERROR' || level == 'WARN') {
+      debugPrint(formatted);
+    }
 
     // Append to file
     if (_logFile != null) {

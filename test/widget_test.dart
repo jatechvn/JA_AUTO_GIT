@@ -1,31 +1,26 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:ja_auto_git/main.dart';
 import 'package:ja_auto_git/modules/ui/styles.dart';
+import 'package:ja_auto_git/utils/constants.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp(initialThemeMode: AppThemeMode.dark));
+  group('App Configuration & Styles Unit Tests', () {
+    test('AppConstants configuration is defined', () {
+      expect(AppConstants.appName, equals('JA Auto Git'));
+      expect(AppConstants.appId, equals('JA_AUTO_GIT'));
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('AppThemeModeExt conversions work correctly', () {
+      expect(AppThemeModeExt.fromCode('dark'), equals(AppThemeMode.dark));
+      expect(AppThemeModeExt.fromCode('light'), equals(AppThemeMode.light));
+      expect(AppThemeModeExt.fromCode('auto'), equals(AppThemeMode.auto));
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(AppThemeMode.dark.code, equals('dark'));
+      expect(AppThemeMode.light.code, equals('light'));
+      expect(AppThemeMode.auto.code, equals('auto'));
+    });
   });
 }
+
+
+
+

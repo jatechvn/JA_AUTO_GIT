@@ -1,11 +1,8 @@
 // ignore_for_file: deprecated_member_use
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as p;
-import 'package:url_launcher/url_launcher_string.dart';
+import '../../services/system_service.dart';
 
 import 'styles.dart';
 import 'dialogs.dart';
@@ -70,7 +67,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
   // Active filters
   String _localFilter = 'all'; // all, has_git, no_git, missing_form, dirty
-  String _cloudFilter = 'all'; // all, not_cloned, cloned, modified
   String _searchQuery = '';
   String _selectedKindFilter = 'all';
 
@@ -81,9 +77,19 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
-    _tabCtrl.addListener(() {
-      if (_tabCtrl.index == 1 && _cloudProjects.isEmpty && !_scanningCloud) {
-        _scanCloud();
+    _tabCtrl.addListener(() async {
+      if (_tabCtrl.index == 1 && !_tabCtrl.indexIsChanging) {
+        if (_ownerCtrl.text.trim().isEmpty) {
+          final uname = await GitService.getGithubUsername();
+          if (uname.isNotEmpty && mounted) {
+            setState(() {
+              _ownerCtrl.text = uname;
+            });
+          }
+        }
+        if (_cloudProjects.isEmpty && _ownerCtrl.text.trim().isNotEmpty) {
+          _scanCloud();
+        }
       }
     });
     LoggerConfig.init();
@@ -93,19 +99,16 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
   Future<void> _loadSettingsAndScan() async {
     final settings = SettingsService.loadSettings();
     final loggedIn = await GitService.isGithubLoggedIn();
-    String? authedUser;
-    if (loggedIn) {
-      authedUser = await GitService.getAuthenticatedUsername();
+    String owner = settings['remote_base'] ?? '';
+    if (owner.isEmpty && loggedIn) {
+      owner = await GitService.getGithubUsername();
     }
     setState(() {
       _isGithubLoggedIn = loggedIn;
       _settings = settings;
       _currentLang = settings['last_lang'] ?? 'en';
       _rootCtrl.text = settings['last_root'] ?? '';
-      
-      final savedOwner = (settings['remote_base'] ?? '').toString().trim();
-      _ownerCtrl.text = savedOwner.isNotEmpty ? savedOwner : (authedUser ?? '');
-
+      _ownerCtrl.text = owner;
       _msgCtrl.text = settings['commit_message'] ?? '';
       _authorCtrl.text = settings['license_author'] ?? 'John Alaa';
 
@@ -120,9 +123,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
     if (_rootCtrl.text.isNotEmpty && Directory(_rootCtrl.text).existsSync()) {
       _scanLocal();
-    }
-    if (_isGithubLoggedIn || _ownerCtrl.text.isNotEmpty) {
-      _scanCloud();
     }
   }
 
@@ -198,14 +198,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
       );
       if (res == 'login') {
         _addLog("GitHub login successful via GUI.", level: 'INFO');
-        final authedUser = await GitService.getAuthenticatedUsername();
-        setState(() {
-          _isGithubLoggedIn = true;
-          if (authedUser != null && authedUser.isNotEmpty) {
-            _ownerCtrl.text = authedUser;
-          }
-        });
-        _scanCloud();
+        setState(() => _isGithubLoggedIn = true);
         return true;
       }
       return false;
@@ -214,22 +207,11 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
   }
 
   Future<void> _scanCloud() async {
+    final owner = _ownerCtrl.text.trim();
+    if (owner.isEmpty) return;
+
     final authed = await _ensureGithubAuth();
     if (!authed) return;
-
-    var owner = _ownerCtrl.text.trim();
-    if (owner.isEmpty) {
-      final username = await GitService.getAuthenticatedUsername();
-      if (username != null && username.isNotEmpty) {
-        owner = username;
-        _ownerCtrl.text = username;
-      }
-    }
-
-    if (owner.isEmpty) {
-      _addLog("Please enter GitHub Owner/Username or log in to fetch cloud repos.", level: 'WARN');
-      return;
-    }
 
     setState(() {
       _scanningCloud = true;
@@ -243,17 +225,28 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
       List<CloudProjectInfo> result = [];
       for (var r in repos) {
-        final name = r['name']?.toString() ?? '';
-        final htmlUrl = (r['url'] ?? r['html_url'])?.toString() ?? '';
-        final updatedAt = (r['updated_at'] ?? r['updatedAt'])?.toString() ?? '';
-        final isPrivate = r['is_private'] ?? r['private'] ?? r['isPrivate'] ?? false;
-        final kind = r['kind']?.toString() ?? 'Git';
-        final syncStatus = r['sync_status']?.toString() ?? 'Not Cloned';
-        final localPath = r['local_path']?.toString() ?? "$root/$name";
+        final name = r['name'] ?? '';
+        final htmlUrl = r['html_url'] ?? '';
+        final updatedAt = r['updated_at'] ?? '';
+        final isPrivate = r['private'] ?? false;
+        final localPath = "$root/$name";
+
+        String syncStatus = "Not Cloned";
+        if (Directory(localPath).existsSync()) {
+          final isBehind = await GitService.isBehindRemote(localPath);
+          final clean = await GitService.isClean(localPath);
+          if (isBehind) {
+            syncStatus = "Needs Pull";
+          } else if (!clean) {
+            syncStatus = "Local Modified";
+          } else {
+            syncStatus = "Up to date";
+          }
+        }
 
         result.add(CloudProjectInfo(
           name: name,
-          kind: kind,
+          kind: 'Git',
           url: htmlUrl,
           updatedAt: updatedAt,
           localPath: localPath,
@@ -283,18 +276,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
     });
   }
 
-  Future<void> _handlePickDirectory() async {
-    final selected = await pickDirectoryPath(initialDirectory: _rootCtrl.text);
-    if (selected != null && selected.trim().isNotEmpty) {
-      setState(() {
-        _rootCtrl.text = selected.trim();
-        _selectedLocalPaths.clear();
-      });
-      _saveCurrentSettings();
-      _scanLocal();
-    }
-  }
-
   // Filtered Local Projects
   List<ProjectInfo> get _filteredLocalProjects {
     return _localProjects.where((p) {
@@ -317,24 +298,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
         return p.name.toLowerCase().contains(q) || p.path.toLowerCase().contains(q) || p.kind.toLowerCase().contains(q);
       }
 
-      return true;
-    }).toList();
-  }
-
-  List<CloudProjectInfo> get _filteredCloudProjects {
-    return _cloudProjects.where((cp) {
-      if (_searchQuery.isNotEmpty) {
-        final q = _searchQuery.toLowerCase();
-        final match = cp.name.toLowerCase().contains(q) || cp.url.toLowerCase().contains(q);
-        if (!match) return false;
-      }
-      if (_cloudFilter == 'not_cloned') {
-        return cp.syncStatus == "Not Cloned";
-      } else if (_cloudFilter == 'cloned') {
-        return cp.syncStatus != "Not Cloned";
-      } else if (_cloudFilter == 'modified') {
-        return cp.syncStatus == "Local Modified";
-      }
       return true;
     }).toList();
   }
@@ -372,7 +335,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                   ),
                 ),
                 if (_selectedLocalPaths.isNotEmpty && _tabCtrl.index == 0) _buildBatchFloatingBar(),
-                if (_selectedCloudUrls.isNotEmpty && _tabCtrl.index == 1) _buildCloudBatchFloatingBar(),
                 _buildConsoleDrawer(),
                 _buildStatusBar(),
               ],
@@ -521,10 +483,10 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
             onPressed: () => widget.themeNotifier.cycleTheme(),
           ),
 
-          // GitHub Auth Status
+          // GitHub Auth Status & Account Switcher
           Tooltip(
             message: _isGithubLoggedIn 
-                ? (_currentLang == 'vi' ? "Đã đăng nhập: ${_ownerCtrl.text} (Nhấn để Quản lý / Đăng xuất)" : "Logged in as ${_ownerCtrl.text} (Click to Manage / Logout)") 
+                ? (_currentLang == 'vi' ? "Tài khoản GitHub (Nhấn để quản lý / đăng xuất)" : "GitHub Account (Click to manage / logout)") 
                 : (_currentLang == 'vi' ? "Chưa đăng nhập GitHub (Nhấn để đăng nhập)" : "GitHub Not Logged In (Click to login)"),
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
@@ -532,95 +494,23 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 if (!_isGithubLoggedIn) {
                   await _ensureGithubAuth();
                 } else {
-                  final act = await showDialog<String>(
+                  final info = await GitService.getGithubAccountInfo();
+                  if (!mounted) return;
+                  final action = await showDialog<String>(
                     context: context,
-                    builder: (ctx) => GlassDialog(
-                      title: _currentLang == 'vi' ? "Tài khoản GitHub" : "GitHub Account",
+                    builder: (_) => GithubAccountDialog(
                       isDark: widget.themeNotifier.isDark,
-                      width: 480,
-                      height: 250,
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _currentLang == 'vi' ? "Tài khoản đang đăng nhập:" : "Currently logged in as:",
-                              style: TextStyle(color: _c.textMuted, fontSize: 12),
-                            ),
-                            const SizedBox(height: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: AppConstants.accentGreen.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppConstants.accentGreen.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.person, color: AppConstants.accentGreen, size: 20),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text : "GitHub User",
-                                    style: const TextStyle(color: AppConstants.accentGreen, fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Spacer(),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, 'cancel'),
-                                  child: Text(_currentLang == 'vi' ? "Đóng" : "Close", style: TextStyle(color: _c.textMuted)),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.amber[800],
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.swap_horiz, size: 14),
-                                  label: Text(_currentLang == 'vi' ? "Đổi Tài Khoản" : "Switch Account"),
-                                  onPressed: () => Navigator.pop(ctx, 'switch'),
-                                ),
-                                const SizedBox(width: 8),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.redAccent,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.logout, size: 14),
-                                  label: Text(_currentLang == 'vi' ? "Đăng Xuất" : "Logout"),
-                                  onPressed: () => Navigator.pop(ctx, 'logout'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                      lang: _currentLang,
+                      accountInfo: info,
                     ),
                   );
-
-                  if (act == 'logout' || act == 'switch') {
-                    setState(() => _showConsole = true);
-                    _addLog("Logging out from GitHub...");
-                    await GitService.logoutGithub();
+                  if (action == 'logout' || action == 'switch') {
                     setState(() {
                       _isGithubLoggedIn = false;
-                      _ownerCtrl.clear();
-                      _cloudProjects.clear();
                     });
-                    _addLog("Logged out from GitHub successfully.", level: 'SUCCESS');
-
-                    if (act == 'switch') {
-                      final authed = await _ensureGithubAuth();
-                      if (authed) {
-                        _scanCloud();
-                      }
+                    _addLog(_currentLang == 'vi' ? "Đã đăng xuất GitHub." : "Logged out from GitHub.", level: 'INFO');
+                    if (action == 'switch') {
+                      await _ensureGithubAuth();
                     }
                   }
                 }
@@ -630,7 +520,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 decoration: BoxDecoration(
                   color: _c.bgTertiary,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _c.borderDefault),
+                  border: Border.all(color: _isGithubLoggedIn ? AppConstants.accentGreen.withOpacity(0.5) : _c.borderDefault),
                 ),
                 child: Row(
                   children: [
@@ -641,7 +531,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _isGithubLoggedIn && _ownerCtrl.text.isNotEmpty ? _ownerCtrl.text.toUpperCase() : "GITHUB",
+                      "GITHUB",
                       style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -690,6 +580,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
       ),
     );
   }
+
 
   // Dashboard Summary Header Cards
   Widget _buildStatsOverviewBar() {
@@ -775,15 +666,20 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     decoration: InputDecoration(
                       hintText: "Target Root Directory Path...",
                       hintStyle: TextStyle(color: _c.textMuted, fontSize: 11),
-                      prefixIcon: IconButton(
-                        icon: const Icon(Icons.folder_open, size: 16, color: AppConstants.accentCyan),
-                        onPressed: _handlePickDirectory,
-                        tooltip: "Browse Folder",
-                      ),
+                      prefixIcon: const Icon(Icons.folder_open, size: 16, color: AppConstants.accentCyan),
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.folder, size: 14, color: AppConstants.accentCyan),
-                        onPressed: _handlePickDirectory,
-                        tooltip: "Browse Folder",
+                        onPressed: () async {
+                          final selected = await SystemService.pickDirectory();
+                          if (selected != null) {
+                            setState(() {
+                              _rootCtrl.text = selected;
+                              _selectedLocalPaths.clear();
+                            });
+                            _saveCurrentSettings();
+                            _scanLocal();
+                          }
+                        },
                       ),
                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       filled: true,
@@ -848,53 +744,50 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
           const SizedBox(height: 8),
 
           // Preset Commit Message & Search Bar
-          Row(
-            children: [
-              // Search input
-              SizedBox(
-                width: 240,
-                height: 30,
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: (val) => setState(() => _searchQuery = val),
-                  style: TextStyle(color: _c.textPrimary, fontSize: 11),
-                  decoration: InputDecoration(
-                    hintText: "Instant search projects...",
-                    hintStyle: TextStyle(color: _c.textMuted, fontSize: 10),
-                    prefixIcon: const Icon(Icons.filter_alt_outlined, size: 14, color: AppConstants.accentCyan),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                    filled: true,
-                    fillColor: _c.bgTertiary,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: _c.borderDefault)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Search input
+                SizedBox(
+                  width: 240,
+                  height: 30,
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (val) => setState(() => _searchQuery = val),
+                    style: TextStyle(color: _c.textPrimary, fontSize: 11),
+                    decoration: InputDecoration(
+                      hintText: "Instant search projects...",
+                      hintStyle: TextStyle(color: _c.textMuted, fontSize: 10),
+                      prefixIcon: const Icon(Icons.filter_alt_outlined, size: 14, color: AppConstants.accentCyan),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                      filled: true,
+                      fillColor: _c.bgTertiary,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: _c.borderDefault)),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-              // Filter pills
-              if (_tabCtrl.index == 0) ...[
+                // Filter pills
                 _buildFilterChip(I18n.t(_currentLang, "btn_check_all"), 'all'),
                 _buildFilterChip(I18n.t(_currentLang, "btn_check_has_git"), 'has_git'),
                 _buildFilterChip(I18n.t(_currentLang, "btn_check_no_git"), 'no_git'),
                 _buildFilterChip(I18n.t(_currentLang, "btn_check_missing_form"), 'missing_form'),
                 _buildFilterChip(I18n.t(_currentLang, "status_local_modified"), 'dirty'),
-              ] else ...[
-                _buildCloudFilterChip("All (${_cloudProjects.length})", 'all'),
-                _buildCloudFilterChip("Not Cloned (${_cloudProjects.where((p) => p.syncStatus == 'Not Cloned').length})", 'not_cloned'),
-                _buildCloudFilterChip("Cloned (${_cloudProjects.where((p) => p.syncStatus != 'Not Cloned').length})", 'cloned'),
-                _buildCloudFilterChip("Modified (${_cloudProjects.where((p) => p.syncStatus == 'Local Modified').length})", 'modified'),
+
+                const SizedBox(width: 16),
+
+                // Preset Commit Message Chips
+                Text("Preset Msg: ", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                _buildPresetChip("feat: initial commit"),
+                _buildPresetChip("fix: dependencies"),
+                _buildPresetChip("docs: update README"),
+                _buildPresetChip("chore: release bump"),
               ],
-
-              const Spacer(),
-
-              // Preset Commit Message Chips
-              Text("Preset Msg: ", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
-              _buildPresetChip("feat: initial commit"),
-              _buildPresetChip("fix: dependencies"),
-              _buildPresetChip("docs: update README"),
-              _buildPresetChip("chore: release bump"),
-            ],
+            ),
           ),
+
         ],
       ),
     );
@@ -913,24 +806,6 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
         onSelected: (val) {
           if (val) setState(() => _localFilter = code);
-        },
-      ),
-    );
-  }
-
-  Widget _buildCloudFilterChip(String label, String code) {
-    final isSelected = _cloudFilter == code;
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: ChoiceChip(
-        label: Text(label, style: TextStyle(fontSize: 10, color: isSelected ? Colors.black : _c.textPrimary)),
-        selected: isSelected,
-        selectedColor: Colors.blueAccent,
-        backgroundColor: _c.bgTertiary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-        onSelected: (val) {
-          if (val) setState(() => _cloudFilter = code);
         },
       ),
     );
@@ -994,103 +869,91 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
       );
     }
 
-    // Data Table View (100% Full Width Edge-to-Edge)
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double minW = math.max(constraints.maxWidth, 900.0);
-        return SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: minW,
-              child: DataTable(
-                headingRowHeight: 38,
-                dataRowHeight: 44,
-                columnSpacing: 20,
-                horizontalMargin: 16,
-                columns: [
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_proj_name").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_framework").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_git_branch").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_version").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_git_status").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "hdr_actions").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                ],
-                rows: projects.map((proj) {
-                  final isSelected = _selectedLocalPaths.contains(proj.path);
-                  return DataRow(
-                    selected: isSelected,
-                    onSelectChanged: (val) {
-                      setState(() {
-                        if (val == true) {
-                          _selectedLocalPaths.add(proj.path);
-                        } else {
-                          _selectedLocalPaths.remove(proj.path);
-                        }
-                      });
-                    },
-                    cells: [
-                      DataCell(
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(proj.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 11)),
-                              Text(proj.path, style: TextStyle(color: _c.textMuted, fontSize: 9)),
-                            ],
-                          ),
-                        ),
+    // Data Table View
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowHeight: 36,
+          dataRowHeight: 40,
+          columnSpacing: 16,
+          columns: [
+            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[1].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[4].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[2].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+            DataColumn(label: Text(I18n.t(_currentLang, "btn_more").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+          ],
+          rows: projects.map((proj) {
+            final isSelected = _selectedLocalPaths.contains(proj.path);
+            return DataRow(
+              selected: isSelected,
+              onSelectChanged: (val) {
+                setState(() {
+                  if (val == true) {
+                    _selectedLocalPaths.add(proj.path);
+                  } else {
+                    _selectedLocalPaths.remove(proj.path);
+                  }
+                });
+              },
+              cells: [
+                DataCell(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(proj.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 11)),
+                      Text(proj.path, style: TextStyle(color: _c.textMuted, fontSize: 9)),
+                    ],
+                  ),
+                ),
+                DataCell(_buildKindBadge(proj.kind)),
+                DataCell(
+                  proj.hasGit
+                      ? Text(proj.branch.isEmpty ? "main" : proj.branch, style: const TextStyle(color: AppConstants.accentGreen, fontSize: 10, fontWeight: FontWeight.bold))
+                      : Text("No Git", style: TextStyle(color: _c.textMuted, fontSize: 10)),
+                ),
+                DataCell(Text(proj.version.isEmpty ? "1.0.0" : proj.version, style: TextStyle(color: _c.textSecondary, fontSize: 10))),
+                DataCell(_buildChecklistBadges(proj)),
+                DataCell(_buildCleanBadge(proj.clean)),
+                DataCell(
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_note, size: 16, color: AppConstants.accentCyan),
+                        tooltip: "Apply Standard Forms",
+                        onPressed: () {
+                          GitFormService.ensureStandardForms(
+                            path: proj.path,
+                            projectName: proj.name,
+                            kind: proj.kind,
+                            authorName: _authorCtrl.text,
+                            remoteBaseUrl: _ownerCtrl.text,
+                          );
+                          _scanLocal();
+                        },
                       ),
-                      DataCell(_buildKindBadge(proj.kind)),
-                      DataCell(
-                        proj.hasGit
-                            ? Text(proj.branch.isEmpty ? "main" : proj.branch, style: const TextStyle(color: AppConstants.accentGreen, fontSize: 10, fontWeight: FontWeight.bold))
-                            : Text("No Git", style: TextStyle(color: _c.textMuted, fontSize: 10)),
-                      ),
-                      DataCell(Text(proj.version.isEmpty ? "1.0.0" : proj.version, style: TextStyle(color: _c.textSecondary, fontSize: 10))),
-                      DataCell(_buildChecklistBadges(proj)),
-                      DataCell(_buildCleanBadge(proj.clean)),
-                      DataCell(
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit_note, size: 16, color: AppConstants.accentCyan),
-                              tooltip: "Apply Standard Forms",
-                              onPressed: () {
-                                GitFormService.ensureStandardForms(
-                                  path: proj.path,
-                                  projectName: proj.name,
-                                  kind: proj.kind,
-                                  authorName: _authorCtrl.text,
-                                  remoteBaseUrl: _ownerCtrl.text,
-                                );
-                                _scanLocal();
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.folder_open, size: 16, color: Colors.amber),
-                              tooltip: "Open Directory",
-                              onPressed: () {
-                                if (Platform.isWindows) {
-                                  Process.run('explorer.exe', [proj.path]);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.folder_open, size: 16, color: Colors.amber),
+                        tooltip: "Open Directory",
+                        onPressed: () {
+                          if (Platform.isWindows) {
+                            Process.run('explorer.exe', [proj.path]);
+                          }
+                        },
                       ),
                     ],
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        );
-      },
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
@@ -1237,605 +1100,56 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
       );
     }
 
-    final filtered = _filteredCloudProjects;
-
     if (_cloudProjects.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 48, color: _c.textMuted),
-            const SizedBox(height: 12),
-            Text("No cloud repositories fetched yet.", style: TextStyle(color: _c.textMuted, fontSize: 13)),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white),
-              icon: const Icon(Icons.refresh, size: 14),
-              label: const Text("Fetch Cloud Repositories"),
-              onPressed: _scanCloud,
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (filtered.isEmpty) {
-      return Center(
-        child: Text("No cloud repositories match the current filter.", style: TextStyle(color: _c.textMuted)),
+        child: Text("No cloud repositories fetched yet. Enter owner and click 'Fetch Cloud'.", style: TextStyle(color: _c.textMuted)),
       );
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(12),
-      itemCount: filtered.length,
+      itemCount: _cloudProjects.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
-        final cp = filtered[index];
-        final isSelected = _selectedCloudUrls.contains(cp.url);
-
-        Color statusColor = Colors.grey;
-        if (cp.syncStatus == "Up to date") {
-          statusColor = Colors.green;
-        } else if (cp.syncStatus == "Local Modified") {
-          statusColor = Colors.amber;
-        } else if (cp.syncStatus == "Needs Pull") {
-          statusColor = AppConstants.accentCyan;
-        } else if (cp.syncStatus == "Not Cloned") {
-          statusColor = Colors.blueAccent;
-        }
-
+        final cp = _cloudProjects[index];
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.blueAccent.withOpacity(0.12) : _c.bgCard,
+            color: _c.bgCard,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isSelected ? Colors.blueAccent : _c.borderDefault, width: isSelected ? 1.5 : 0.5),
+            border: Border.all(color: _c.borderDefault, width: 0.5),
           ),
           child: Row(
             children: [
-              Checkbox(
-                value: isSelected,
-                activeColor: Colors.blueAccent,
-                onChanged: (val) {
-                  setState(() {
-                    if (val == true) {
-                      _selectedCloudUrls.add(cp.url);
-                    } else {
-                      _selectedCloudUrls.remove(cp.url);
-                    }
-                  });
-                },
-              ),
-              Icon(
-                cp.isPrivate ? Icons.lock_outline : Icons.cloud_done_outlined,
-                color: cp.isPrivate ? Colors.amber : Colors.blueAccent,
-                size: 20,
-              ),
+              const Icon(Icons.cloud_done_outlined, color: Colors.blueAccent, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(cp.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 14, color: AppConstants.accentCyan),
-                          tooltip: "Rename Repository",
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () async {
-                            final nameCtrl = TextEditingController(text: cp.name);
-                            final newName = await showDialog<String>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                backgroundColor: _c.bgCard,
-                                title: Text("Rename GitHub Repository", style: TextStyle(color: _c.textPrimary)),
-                                content: TextField(
-                                  controller: nameCtrl,
-                                  style: TextStyle(color: _c.textPrimary),
-                                  decoration: InputDecoration(
-                                    labelText: "New Repository Name",
-                                    labelStyle: TextStyle(color: _c.textMuted),
-                                    border: const OutlineInputBorder(),
-                                  ),
-                                ),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(backgroundColor: AppConstants.accentCyan, foregroundColor: Colors.black),
-                                    onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
-                                    child: const Text("Rename"),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (newName != null && newName.isNotEmpty && newName != cp.name) {
-                              setState(() => _showConsole = true);
-                              _addLog("Renaming repository ${cp.name} to $newName...");
-                              final ok = await GitService.renameCloudRepo(_ownerCtrl.text, cp.name, newName, (m) => _addLog(m));
-                              if (ok) {
-                                _addLog("Renamed to $newName successfully!", level: 'SUCCESS');
-                              }
-                              _scanCloud();
-                              _scanLocal();
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        _buildKindBadge(cp.kind),
-                        const SizedBox(width: 6),
-                        InkWell(
-                          onTap: () async {
-                            final targetVis = !cp.isPrivate;
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                backgroundColor: _c.bgCard,
-                                title: Text("Change Visibility to ${targetVis ? 'PRIVATE' : 'PUBLIC'}?", style: TextStyle(color: _c.textPrimary)),
-                                content: Text("Are you sure you want to change repository '${cp.name}' to ${targetVis ? 'Private' : 'Public'}?", style: TextStyle(color: _c.textSecondary)),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white),
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: const Text("Change Visibility"),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirm == true) {
-                              setState(() => _showConsole = true);
-                              final ok = await GitService.toggleRepoVisibility(_ownerCtrl.text, cp.name, targetVis, (m) => _addLog(m));
-                              if (ok) {
-                                _addLog("Changed visibility of ${cp.name} to ${targetVis ? 'Private' : 'Public'}!", level: 'SUCCESS');
-                              }
-                              _scanCloud();
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(4),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: (cp.isPrivate ? Colors.amber : Colors.green).withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: (cp.isPrivate ? Colors.amber : Colors.green).withOpacity(0.4)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  cp.isPrivate ? "PRIVATE" : "PUBLIC",
-                                  style: TextStyle(color: cp.isPrivate ? Colors.amber : Colors.green, fontSize: 8, fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(width: 3),
-                                Icon(Icons.sync_alt, size: 9, color: cp.isPrivate ? Colors.amber : Colors.green),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(cp.url, style: TextStyle(color: _c.textMuted, fontSize: 10)),
+                    Text(cp.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(cp.url, style: TextStyle(color: _c.textMuted, fontSize: 9)),
                   ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.15),
+                  color: AppConstants.accentCyan.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: statusColor.withOpacity(0.3)),
                 ),
-                child: Text(cp.syncStatus, style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.bold)),
+                child: Text(cp.syncStatus, style: const TextStyle(color: AppConstants.accentCyan, fontSize: 9, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 12),
-              // Action Buttons Toolbar
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (cp.syncStatus == "Not Cloned")
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      icon: const Icon(Icons.download, size: 13),
-                      label: const Text("CLONE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        setState(() => _showConsole = true);
-                        _addLog("Starting Git Clone for ${cp.name} into ${cp.localPath}...");
-                        final cloneParentDir = p.dirname(cp.localPath);
-                        if (!Directory(cloneParentDir).existsSync()) {
-                          try {
-                            Directory(cloneParentDir).createSync(recursive: true);
-                            _addLog("Created target clone directory: $cloneParentDir", level: 'INFO');
-                          } catch (e) {
-                            _addLog("Failed to create target clone directory $cloneParentDir: $e", level: 'ERROR');
-                          }
-                        }
-                        final ok = await GitService.cloneCloudRepo(cp.url, cp.localPath, (m) => _addLog(m));
-                        if (ok) {
-                          _addLog("Cloned ${cp.name} successfully into ${cp.localPath}!", level: 'SUCCESS');
-                        }
-                        _scanCloud();
-                        _scanLocal();
-                      },
-                    ),
-                  if (cp.syncStatus == "Needs Pull" || cp.syncStatus == "Up to date" || cp.syncStatus == "Local Modified") ...[
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppConstants.accentCyan,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      icon: const Icon(Icons.south_west, size: 13),
-                      label: const Text("PULL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        setState(() => _showConsole = true);
-                        _addLog("Starting Git Pull for ${cp.name}...");
-                        final ok = await GitService.pullCloudRepo(cp.localPath, (m) => _addLog(m));
-                        if (ok) {
-                          _addLog("Pulled ${cp.name} successfully!", level: 'SUCCESS');
-                        }
-                        _scanCloud();
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  if (cp.syncStatus == "Local Modified") ...[
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppConstants.accentGreen,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      ),
-                      icon: const Icon(Icons.north_east, size: 13),
-                      label: const Text("PUSH", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        setState(() => _showConsole = true);
-                        _addLog("Starting Git Push for ${cp.name}...");
-                        final ok = await GitService.commitAndPushProject(
-                          cp.localPath,
-                          _ownerCtrl.text,
-                          _msgCtrl.text,
-                          (m) => _addLog(m),
-                        );
-                        if (ok) {
-                          _addLog("Pushed ${cp.name} successfully!", level: 'SUCCESS');
-                        }
-                        _scanCloud();
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  if (cp.syncStatus != "Not Cloned") ...[
-                    IconButton(
-                      icon: const Icon(Icons.folder_open, size: 16, color: Colors.amber),
-                      tooltip: "Open Directory",
-                      onPressed: () {
-                        if (Platform.isWindows && Directory(cp.localPath).existsSync()) {
-                          Process.run('explorer.exe', [cp.localPath]);
-                        }
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.folder_delete_outlined, size: 16, color: Colors.redAccent),
-                      tooltip: _currentLang == 'vi' ? "Xóa thư mục đã tải xuống" : "Delete Downloaded Clone Folder",
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => GlassDialog(
-                            title: _currentLang == 'vi' ? "Xóa Thư Mục Đã Tải?" : "Delete Downloaded Folder?",
-                            isDark: widget.themeNotifier.isDark,
-                            width: 480,
-                            height: 220,
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _currentLang == 'vi' 
-                                        ? "Bạn có chắc chắn muốn xóa toàn bộ thư mục dự án '${cp.name}' đã tải xuống khỏi máy tính?" 
-                                        : "Are you sure you want to delete local downloaded folder for '${cp.name}'?",
-                                    style: TextStyle(color: _c.textPrimary, fontSize: 13),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    cp.localPath,
-                                    style: TextStyle(color: _c.textMuted, fontSize: 11),
-                                  ),
-                                  const Spacer(),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
-                                        child: Text(_currentLang == 'vi' ? "Hủy" : "Cancel", style: TextStyle(color: _c.textMuted)),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-                                        icon: const Icon(Icons.folder_delete, size: 14),
-                                        label: Text(_currentLang == 'vi' ? "Xóa Thư Mục" : "Delete Folder"),
-                                        onPressed: () => Navigator.pop(ctx, true),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                        if (confirm == true) {
-                          setState(() => _showConsole = true);
-                          final ok = await GitService.deleteClonedDirectory(cp.localPath, (m) => _addLog(m));
-                          if (ok) {
-                            _addLog("Deleted cloned directory for ${cp.name}!", level: 'SUCCESS');
-                          }
-                          _scanCloud();
-                          _scanLocal();
-                        }
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.layers_clear_outlined, size: 16, color: Colors.orangeAccent),
-                      tooltip: "Delete Local .git Folder",
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => GlassDialog(
-                            title: _currentLang == 'vi' ? "Xóa Thư Mục .git Cục Bộ?" : "Delete Local .git Folder?",
-                            isDark: widget.themeNotifier.isDark,
-                            width: 480,
-                            height: 220,
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _currentLang == 'vi'
-                                        ? "Bạn có chắc chắn muốn xóa thư mục .git khỏi dự án '${cp.name}'?"
-                                        : "Are you sure you want to remove .git folder from local project '${cp.name}'?",
-                                    style: TextStyle(color: _c.textPrimary, fontSize: 13),
-                                  ),
-                                  const Spacer(),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
-                                        child: Text(_currentLang == 'vi' ? "Hủy" : "Cancel", style: TextStyle(color: _c.textMuted)),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent, foregroundColor: Colors.black),
-                                        onPressed: () => Navigator.pop(ctx, true),
-                                        child: Text(_currentLang == 'vi' ? "Xóa .git" : "Delete .git"),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                        if (confirm == true) {
-                          setState(() => _showConsole = true);
-                          final ok = await GitService.deleteLocalGit(cp.localPath, (m) => _addLog(m));
-                          if (ok) {
-                            _addLog("Deleted local .git for ${cp.name}!", level: 'SUCCESS');
-                          }
-                          _scanCloud();
-                          _scanLocal();
-                        }
-                      },
-                    ),
-                  ],
-                  IconButton(
-                    icon: const Icon(Icons.publish_outlined, size: 16, color: AppConstants.accentCyan),
-                    tooltip: _currentLang == 'vi' ? "Đẩy Release lên GitHub" : "Publish Release to GitHub",
-                    onPressed: () async {
-                      final releaseData = await showDialog<Map<String, dynamic>>(
-                        context: context,
-                        builder: (ctx) => PublishReleaseDialog(
-                          repoName: cp.name,
-                          owner: _ownerCtrl.text,
-                          localPath: cp.localPath,
-                          isDark: widget.themeNotifier.isDark,
-                          lang: _currentLang,
-                        ),
-                      );
-                      if (releaseData != null) {
-                        final tag = releaseData['tag']?.toString() ?? '';
-                        final targetBranch = releaseData['targetBranch']?.toString() ?? 'main';
-                        final title = releaseData['title']?.toString() ?? '';
-                        final notes = releaseData['notes']?.toString() ?? '';
-                        final generateNotes = releaseData['generateNotes'] == true;
-                        final isDraft = releaseData['isDraft'] == true;
-                        final isPrerelease = releaseData['isPrerelease'] == true;
-                        final isLatest = releaseData['isLatest'] == true;
-                        final assetPaths = (releaseData['assetPaths'] as List?)?.cast<String>();
-
-                        if (tag.isNotEmpty) {
-                          setState(() => _showConsole = true);
-                          _addLog("Publishing release $tag for ${cp.name} (target: $targetBranch)...");
-                          final ok = await GitService.createGithubRelease(
-                            owner: _ownerCtrl.text,
-                            repoName: cp.name,
-                            tagName: tag,
-                            targetBranch: targetBranch,
-                            releaseTitle: title,
-                            releaseNotes: notes,
-                            generateNotes: generateNotes,
-                            isDraft: isDraft,
-                            isPrerelease: isPrerelease,
-                            isLatest: isLatest,
-                            assetFilePaths: assetPaths,
-                            log: (m) => _addLog(m),
-                          );
-                          if (ok) {
-                            _addLog("Published release $tag for ${cp.name} successfully!", level: 'SUCCESS');
-                          }
-                        }
-                      }
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.open_in_new, size: 16, color: Colors.blueAccent),
-                    tooltip: "Open in Browser",
-                    onPressed: () => openUrlHelper(cp.url),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever_outlined, size: 16, color: Colors.redAccent),
-                    tooltip: "Delete Repository on GitHub",
-                    onPressed: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: _c.bgCard,
-                          title: Text("Delete GitHub Repository?", style: TextStyle(color: _c.textPrimary)),
-                          content: Text("Are you sure you want to permanently delete repository '${cp.name}' from GitHub?\nThis action cannot be undone!", style: TextStyle(color: _c.textSecondary)),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text("Delete Permanently"),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirm == true) {
-                        setState(() => _showConsole = true);
-                        _addLog("Deleting repository ${cp.name} from GitHub...");
-                        final ok = await GitService.deleteCloudRepo(_ownerCtrl.text, cp.name, (m) => _addLog(m));
-                        if (ok) {
-                          _addLog("Deleted ${cp.name} from GitHub!", level: 'SUCCESS');
-                        }
-                        _scanCloud();
-                      }
-                    },
-                  ),
-                ],
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 16, color: Colors.blueAccent),
+                tooltip: "Open in Browser",
+                onPressed: () => SystemService.openUrl(cp.url),
               ),
             ],
           ),
         );
       },
-    );
-  }
-
-  // Floating Batch Action Toolbar for Cloud Tab
-  Widget _buildCloudBatchFloatingBar() {
-    final count = _selectedCloudUrls.length;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.blueAccent,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.blueAccent.withOpacity(0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          Text(
-            "$count Cloud Repos Selected",
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-          ),
-          const Spacer(),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.green),
-            icon: const Icon(Icons.download, size: 14),
-            label: Text("CLONE SELECTED ($count)", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-            onPressed: () async {
-              setState(() => _showConsole = true);
-              final targets = _cloudProjects.where((cp) => _selectedCloudUrls.contains(cp.url) && cp.syncStatus == "Not Cloned").toList();
-              for (var cp in targets) {
-                _addLog("Cloning ${cp.name}...");
-                await GitService.cloneCloudRepo(cp.url, cp.localPath, (m) => _addLog(m));
-              }
-              _scanCloud();
-              _scanLocal();
-            },
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: AppConstants.accentCyan),
-            icon: const Icon(Icons.south_west, size: 14),
-            label: Text("PULL SELECTED ($count)", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-            onPressed: () async {
-              setState(() => _showConsole = true);
-              final targets = _cloudProjects.where((cp) => _selectedCloudUrls.contains(cp.url) && cp.syncStatus != "Not Cloned").toList();
-              for (var cp in targets) {
-                _addLog("Pulling ${cp.name}...");
-                await GitService.pullCloudRepo(cp.localPath, (m) => _addLog(m));
-              }
-              _scanCloud();
-            },
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.redAccent),
-            icon: const Icon(Icons.delete_forever, size: 14),
-            label: Text("DELETE SELECTED ($count)", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: _c.bgCard,
-                  title: Text("Delete Selected Repositories?", style: TextStyle(color: _c.textPrimary)),
-                  content: Text("Are you sure you want to permanently delete $count repositories from GitHub?\nThis action CANNOT be undone!", style: TextStyle(color: _c.textSecondary)),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text("Delete All Selected"),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                setState(() => _showConsole = true);
-                final targets = _cloudProjects.where((cp) => _selectedCloudUrls.contains(cp.url)).toList();
-                for (var cp in targets) {
-                  _addLog("Deleting ${cp.name} from GitHub...");
-                  await GitService.deleteCloudRepo(_ownerCtrl.text, cp.name, (m) => _addLog(m));
-                }
-                setState(() => _selectedCloudUrls.clear());
-                _scanCloud();
-              }
-            },
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 18),
-            tooltip: "Deselect All",
-            onPressed: () => setState(() => _selectedCloudUrls.clear()),
-          ),
-        ],
-      ),
     );
   }
 
