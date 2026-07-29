@@ -56,6 +56,7 @@ if exist "ABOUT.txt" copy /y "ABOUT.txt" "%RELEASE_DIR%\" >nul
 if exist "README.md" copy /y "README.md" "%RELEASE_DIR%\" >nul
 if exist "CHANGELOG.md" copy /y "CHANGELOG.md" "%RELEASE_DIR%\" >nul
 if exist "LICENSE" copy /y "LICENSE" "%RELEASE_DIR%\" >nul
+if exist "debug.bat" copy /y "debug.bat" "%RELEASE_DIR%\" >nul
 
 echo.
 :: 4. Copy fully self-contained release to dist/
@@ -70,9 +71,13 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-:: 5. Create ZIP package in dist/
-echo [5/5] Packaging standalone ZIP release...
-powershell -Command "Compress-Archive -Path 'dist\*' -DestinationPath 'dist\JA_Auto_Git_v1.5.0_Windows.zip' -Force"
+:: 5. Create ZIP package wrapped in Parent Folder inside
+echo [5/5] Packaging standalone ZIP release wrapped in parent folder...
+if exist "dist_pack" rmdir /s /q "dist_pack"
+mkdir "dist_pack\JA_Auto_Git_v1.5.0_Windows_x64"
+xcopy /e /i /y /q "dist\*.*" "dist_pack\JA_Auto_Git_v1.5.0_Windows_x64\"
+powershell -Command "Compress-Archive -Path 'dist_pack\*' -DestinationPath 'dist\JA_Auto_Git_v1.5.0_Windows_x64.zip' -Force"
+if exist "dist_pack" rmdir /s /q "dist_pack"
 
 echo.
 echo =======================================================================
@@ -82,7 +87,7 @@ echo.
 echo The self-contained application with bin, assets ^& docs is ready in:
 echo %WORKSPACE_DIR%dist\
 echo.
-echo Executable location:
-echo %WORKSPACE_DIR%dist\ja_auto_git.exe
+echo Standalone parent-folder ZIP package:
+echo %WORKSPACE_DIR%dist\JA_Auto_Git_v1.5.0_Windows_x64.zip
 echo.
 pause
