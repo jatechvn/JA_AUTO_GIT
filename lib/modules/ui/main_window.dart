@@ -14,6 +14,7 @@ import '../../services/git_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/i18n.dart';
 import '../../utils/windows_info.dart';
+import '../build_info.dart';
 import '../logger_config.dart';
 import '../native_bridge.dart';
 
@@ -92,7 +93,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
         }
       }
     });
-    LoggerConfig.init();
+    LoggerConfig.init(debug: BuildInfo.isDebug);
     _loadSettingsAndScan();
   }
 
@@ -123,6 +124,10 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
     if (_rootCtrl.text.isNotEmpty && Directory(_rootCtrl.text).existsSync()) {
       _scanLocal();
+    }
+    
+    if (_isGithubLoggedIn && _ownerCtrl.text.isNotEmpty) {
+      _scanCloud();
     }
   }
 
@@ -390,12 +395,12 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
               ),
               Row(
                 children: [
-                  BlinkingDot(size: 6, color: AppConstants.accentGreen),
+                  BlinkingDot(size: 6, color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentGreen),
                   const SizedBox(width: 6),
                   Text(
-                    "v${AppConstants.appVersion}",
+                    BuildInfo.badgeLabel,
                     style: TextStyle(
-                      color: AppConstants.accentCyan,
+                      color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentCyan,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       fontFamily: AppConstants.fontMono,
@@ -405,49 +410,58 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
               ),
             ],
           ),
-          const Spacer(),
-
-          // Navigation Tabs
-          SizedBox(
-            width: 280,
-            height: 32,
-            child: TabBar(
-              controller: _tabCtrl,
-              dividerColor: Colors.transparent,
-              indicatorSize: TabBarIndicatorSize.tab,
-              indicator: BoxDecoration(
-                color: AppConstants.accentCyan.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
-              ),
-              labelColor: AppConstants.accentCyan,
-              unselectedLabelColor: _c.textSecondary,
-              labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-              tabs: [
-                Tab(text: "🗂️ ${I18n.t(_currentLang, "tab_local")}"),
-                Tab(text: "☁️ ${I18n.t(_currentLang, "tab_cloud")}"),
-              ],
-            ),
-          ),
           const SizedBox(width: 16),
 
-          // View Mode Switcher
-          IconButton(
-            tooltip: _viewMode == ViewMode.table ? "Switch to Grid Cards" : "Switch to Compact Table",
-            icon: Icon(
-              _viewMode == ViewMode.table ? Icons.grid_view_rounded : Icons.table_rows_rounded,
-              color: AppConstants.accentCyan,
-              size: 18,
-            ),
-            onPressed: () {
-              setState(() {
-                _viewMode = _viewMode == ViewMode.table ? ViewMode.grid : ViewMode.table;
-              });
-            },
-          ),
+          // Right side (Tabs, View Mode, Settings, GITHUB, Lang) wrapped in scrollable view to prevent squeezing
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Navigation Tabs
+                    SizedBox(
+                      width: 280,
+                      height: 32,
+                      child: TabBar(
+                        controller: _tabCtrl,
+                        dividerColor: Colors.transparent,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicator: BoxDecoration(
+                          color: AppConstants.accentCyan.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
+                        ),
+                        labelColor: AppConstants.accentCyan,
+                        unselectedLabelColor: _c.textSecondary,
+                        labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        tabs: [
+                          Tab(text: "🗂️ ${I18n.t(_currentLang, "tab_local")}"),
+                          Tab(text: "☁️ ${I18n.t(_currentLang, "tab_cloud")}"),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
 
-          // Settings & User Guide Button
-          IconButton(
+                    // View Mode Switcher
+                    IconButton(
+                      tooltip: _viewMode == ViewMode.table ? "Switch to Grid Cards" : "Switch to Compact Table",
+                      icon: Icon(
+                        _viewMode == ViewMode.table ? Icons.grid_view_rounded : Icons.table_rows_rounded,
+                        color: AppConstants.accentCyan,
+                        size: 18,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _viewMode = _viewMode == ViewMode.table ? ViewMode.grid : ViewMode.table;
+                        });
+                      },
+                    ),
+
+                    // Settings & User Guide Button
+                    IconButton(
             tooltip: _currentLang == 'vi' ? "Cài đặt & Hướng dẫn (About)" : "Settings & Guide (About)",
             icon: const Icon(
               Icons.settings_rounded,
@@ -572,7 +586,12 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                     (_currentLang == 'zh-cn' ? 'ZH' : _currentLang).toUpperCase(),
                     style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold),
                   ),
-                ],
+                  ],
+              ),
+            ),
+          ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -870,24 +889,28 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
     }
 
     // Data Table View
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowHeight: 36,
-          dataRowHeight: 40,
-          columnSpacing: 16,
-          columns: [
-            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[1].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[4].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[2].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-            DataColumn(label: Text(I18n.t(_currentLang, "btn_more").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-          ],
-          rows: projects.map((proj) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowHeight: 36,
+                dataRowHeight: 40,
+                columnSpacing: 24,
+                columns: [
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[1].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[4].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[2].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.t(_currentLang, "btn_more").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                ],
+                rows: projects.map((proj) {
             final isSelected = _selectedLocalPaths.contains(proj.path);
             return DataRow(
               selected: isSelected,
@@ -951,9 +974,12 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 ),
               ],
             );
-          }).toList(),
-        ),
-      ),
+            }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1094,7 +1120,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
           children: [
             const CircularProgressIndicator(color: Colors.blueAccent),
             const SizedBox(height: 12),
-            Text("Fetching cloud repositories...", style: TextStyle(color: _c.textSecondary)),
+            Text(I18n.t(_currentLang, "status_fetching"), style: TextStyle(color: _c.textSecondary)),
           ],
         ),
       );
@@ -1102,51 +1128,179 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
     if (_cloudProjects.isEmpty) {
       return Center(
-        child: Text("No cloud repositories fetched yet. Enter owner and click 'Fetch Cloud'.", style: TextStyle(color: _c.textMuted)),
+        child: Text("No cloud repositories fetched. Enter owner and click 'Fetch Cloud'.", style: TextStyle(color: _c.textMuted)),
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: _cloudProjects.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final cp = _cloudProjects[index];
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _c.bgCard,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _c.borderDefault, width: 0.5),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.cloud_done_outlined, color: Colors.blueAccent, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(cp.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
-                    Text(cp.url, style: TextStyle(color: _c.textMuted, fontSize: 9)),
-                  ],
-                ),
+    final isVi = _currentLang == 'vi';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowHeight: 36,
+                dataRowHeight: 48,
+                columnSpacing: 24,
+                columns: [
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(isVi ? "CẬP NHẬT" : "UPDATED", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(isVi ? "QUYỀN" : "VISIBILITY", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text(I18n.t(_currentLang, "btn_more").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                ],
+                rows: _cloudProjects.map((cp) {
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        Row(
+                          children: [
+                            Icon(cp.isPrivate ? Icons.lock_outline : Icons.public, size: 14, color: _c.textSecondary),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(cp.name, style: TextStyle(color: _c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
+                                Text(cp.url, style: TextStyle(color: _c.textMuted, fontSize: 9)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppConstants.accentCyan.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(cp.syncStatus, style: const TextStyle(color: AppConstants.accentCyan, fontSize: 9, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      DataCell(
+                        Text(cp.updatedAt.isNotEmpty && cp.updatedAt.length > 10 ? cp.updatedAt.substring(0, 10) : cp.updatedAt, style: TextStyle(color: _c.textSecondary, fontSize: 11)),
+                      ),
+                      DataCell(
+                        Text(cp.isPrivate ? 'Private' : 'Public', style: TextStyle(color: cp.isPrivate ? Colors.amber : Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                      DataCell(
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.open_in_new, size: 16, color: Colors.blueAccent),
+                              tooltip: isVi ? "Mở trong trình duyệt" : "Open in Browser",
+                              onPressed: () => SystemService.openUrl(cp.url),
+                            ),
+                            PopupMenuButton<String>(
+                              icon: Icon(Icons.more_vert, color: _c.textSecondary, size: 18),
+                              color: widget.themeNotifier.mode == AppThemeMode.dark ? const Color(0xFF1E222D) : Colors.white,
+                              itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'settings',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.settings, size: 16, color: Colors.grey),
+                                      const SizedBox(width: 8),
+                                      Text(isVi ? "Cài đặt Repository" : "Repository Settings", style: TextStyle(color: _c.textPrimary, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'visibility',
+                                  child: Row(
+                                    children: [
+                                      Icon(cp.isPrivate ? Icons.public : Icons.lock, size: 16, color: Colors.amber),
+                                      const SizedBox(width: 8),
+                                      Text(isVi ? "Đổi sang ${cp.isPrivate ? 'Public' : 'Private'}" : "Change to ${cp.isPrivate ? 'Public' : 'Private'}", style: TextStyle(color: _c.textPrimary, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'rename',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.edit, size: 16, color: Colors.blueAccent),
+                                      const SizedBox(width: 8),
+                                      Text(isVi ? "Đổi tên dự án" : "Rename repository", style: TextStyle(color: _c.textPrimary, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.delete_forever, size: 16, color: Colors.redAccent),
+                                      const SizedBox(width: 8),
+                                      Text(isVi ? "Xóa vĩnh viễn" : "Delete repository", style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              onSelected: (val) async {
+                                if (val == 'settings') {
+                                  SystemService.openUrl("${cp.url}/settings");
+                                } else if (val == 'visibility') {
+                                  final newVis = cp.isPrivate ? 'public' : 'private';
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (_) => AlertDialog(
+                                      title: Text(isVi ? "Thay Đổi Quyền" : "Change Visibility"),
+                                      content: Text(isVi ? "Bạn có chắc muốn đổi repo thành $newVis không?" : "Are you sure you want to make this repo $newVis?"),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(isVi ? "Hủy" : "Cancel")),
+                                        TextButton(
+                                          onPressed: () => Navigator.of(context).pop(true), 
+                                          child: Text(isVi ? "Đồng ý" : "Confirm", style: const TextStyle(color: Colors.amber)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    final ok = await GitService.changeCloudReposVisibility(_ownerCtrl.text, [MapEntry(cp.name, newVis)], _addLog, (_) {});
+                                    if (ok) _scanCloud();
+                                  }
+                                } else if (val == 'rename') {
+                                  final newName = await showDialog<String>(
+                                    context: context,
+                                    builder: (_) => RenameCloudRepoDialog(
+                                      projectName: cp.name,
+                                      isDark: widget.themeNotifier.mode == AppThemeMode.dark,
+                                      lang: _currentLang,
+                                    ),
+                                  );
+                                  if (newName != null && newName.isNotEmpty) {
+                                    final ok = await GitService.renameCloudRepo(_ownerCtrl.text, cp.name, newName, _addLog);
+                                    if (ok) _scanCloud();
+                                  }
+                                } else if (val == 'delete') {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (_) => DeleteCloudRepoDialog(
+                                      projectName: cp.name,
+                                      isDark: widget.themeNotifier.mode == AppThemeMode.dark,
+                                      lang: _currentLang,
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    final ok = await GitService.deleteCloudRepos(_ownerCtrl.text, [cp.name], _addLog, (_) {});
+                                    if (ok) _scanCloud();
+                                  }
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppConstants.accentCyan.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(cp.syncStatus, style: const TextStyle(color: AppConstants.accentCyan, fontSize: 9, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                icon: const Icon(Icons.open_in_new, size: 16, color: Colors.blueAccent),
-                tooltip: "Open in Browser",
-                onPressed: () => SystemService.openUrl(cp.url),
-              ),
-            ],
+            ),
           ),
         );
       },

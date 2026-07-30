@@ -216,6 +216,161 @@ class ConflictDialog extends StatelessWidget {
   }
 }
 
+class RenameCloudRepoDialog extends StatefulWidget {
+  final String projectName;
+  final bool isDark;
+  final String lang;
+
+  const RenameCloudRepoDialog({
+    Key? key,
+    required this.projectName,
+    required this.isDark,
+    required this.lang,
+  }) : super(key: key);
+
+  @override
+  State<RenameCloudRepoDialog> createState() => _RenameCloudRepoDialogState();
+}
+
+class _RenameCloudRepoDialogState extends State<RenameCloudRepoDialog> {
+  late TextEditingController _nameCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.projectName);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isVi = widget.lang == 'vi';
+    return GlassDialog(
+      title: isVi ? "ĐỔI TÊN REPOSITORY TRÊN GITHUB" : "RENAME CLOUD REPOSITORY",
+      width: 480,
+      height: 260,
+      isDark: widget.isDark,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isVi ? "Nhập tên mới cho repository '${widget.projectName}':" : "Enter new name for repository '${widget.projectName}':",
+            style: TextStyle(color: widget.isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _nameCtrl,
+            style: TextStyle(color: widget.isDark ? Colors.white : Colors.black, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: isVi ? "Tên kho lưu trữ mới..." : "New repository name...",
+              hintStyle: TextStyle(color: widget.isDark ? Colors.white54 : Colors.black54),
+              filled: true,
+              fillColor: widget.isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const Spacer(),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(isVi ? "Hủy" : "Cancel", style: const TextStyle(color: Colors.grey)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppConstants.accentCyan, foregroundColor: Colors.black),
+                  onPressed: () {
+                    final newName = _nameCtrl.text.trim();
+                    if (newName.isNotEmpty && newName != widget.projectName) {
+                      Navigator.of(context).pop(newName);
+                    }
+                  },
+                  child: Text(isVi ? "Đổi Tên" : "Rename", style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DeleteCloudRepoDialog extends StatelessWidget {
+  final String projectName;
+  final bool isDark;
+  final String lang;
+
+  const DeleteCloudRepoDialog({
+    Key? key,
+    required this.projectName,
+    required this.isDark,
+    required this.lang,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final isVi = lang == 'vi';
+    return GlassDialog(
+      title: isVi ? "XÓA KHO LƯU TRỮ GITHUB" : "DELETE CLOUD REPOSITORY",
+      width: 500,
+      height: 280,
+      isDark: isDark,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_rounded, color: Colors.redAccent, size: 40),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  isVi ? "CẢNH BÁO NGUY HIỂM" : "DANGER ZONE WARNING",
+                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isVi 
+              ? "Bạn sắp xóa vĩnh viễn kho lưu trữ '$projectName' trên GitHub. Hành động này KHÔNG THỂ HOÀN TÁC." 
+              : "You are about to permanently delete the repository '$projectName' on GitHub. This action CANNOT BE UNDONE.",
+            style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 13),
+          ),
+          const Spacer(),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text(isVi ? "Hủy" : "Cancel", style: const TextStyle(color: Colors.grey)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(isVi ? "Xóa Vĩnh Viễn" : "Delete Permanently", style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// GitHub Auth Dialog to prompt browser login
 class GithubAuthGuiDialog extends StatefulWidget {
   final bool isDark;

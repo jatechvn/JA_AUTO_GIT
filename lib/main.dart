@@ -4,8 +4,14 @@ import 'utils/constants.dart';
 import 'modules/ui/styles.dart';
 import 'services/settings_service.dart';
 
-void main() async {
+import 'modules/build_info.dart';
+
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  if (args.contains('-debug') || args.contains('--debug')) {
+    BuildInfo.isCliDebug = true;
+  }
 
   // Load saved theme
   final settings = SettingsService.loadSettings();

@@ -57,7 +57,7 @@ if (\$dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 class AppConstants {
   static const String appId = "JA_AUTO_GIT";
   static const String appName = "JA Auto Git";
-  static const String appVersion = "1.5.0";
+  static const String appVersion = "1.6.0";
   static const String appTitle = "JA AUTO GIT - LIQUID GLASS";
 
   static const double defaultWidth = 1220;

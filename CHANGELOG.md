@@ -4,6 +4,18 @@ All notable changes to **JA_Auto_Git** will be documented in this file.
 
 ---
 
+## [v1.6.0] - 2026-07-30
+
+### 🚀 Major Features & Enhancements
+- **🌐 Automated GitHub Cloud Fetching:**
+  - The application now automatically scans and fetches your cloud repositories in the background on startup.
+- **🗂️ Redesigned Cloud Data Table:**
+  - Upgraded the Cloud Tab UI to a full-width **DataTable** with sortable columns: Project, Sync Status, Updated, Visibility, and Actions.
+- **⚙️ Integrated Git Action Menu for Cloud:**
+  - Added an interactive action menu to each cloud repository for quick web access, toggling visibility (Public/Private), renaming projects, and permanently deleting repositories.
+
+---
+
 ## [v1.5.0] - 2026-07-28
 
 ### 🚀 Major Features & Enhancements

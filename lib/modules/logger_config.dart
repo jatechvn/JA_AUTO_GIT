@@ -22,7 +22,7 @@ class LoggerConfig {
   }
 
   static void log(String message, {String level = 'INFO', Object? error, StackTrace? stackTrace}) {
-    final timestamp = DateTime.now().toIso8601String().substring(11, 19);
+    final timestamp = isDebugMode ? DateTime.now().toIso8601String() : DateTime.now().toIso8601String().substring(11, 19);
     var formatted = '[$timestamp] [$level] $message';
     
     if (error != null && isDebugMode) {

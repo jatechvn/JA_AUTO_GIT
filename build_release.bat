@@ -41,7 +41,7 @@ echo.
 :: 3. Copy bin, assets, and documentation to build output
 echo [3/5] Bundling embedded binaries (bin\), assets, and docs to build output...
 if exist "bin" (
-    echo Copying bin/ (gh.exe, git/)...
+    echo Copying bin/ ^(gh.exe, git/^) ...
     xcopy /e /i /y /q "bin" "%RELEASE_DIR%\bin\"
 )
 if exist "assets" (
@@ -74,10 +74,15 @@ echo.
 :: 5. Create ZIP package wrapped in Parent Folder inside
 echo [5/5] Packaging standalone ZIP release wrapped in parent folder...
 if exist "dist_pack" rmdir /s /q "dist_pack"
-mkdir "dist_pack\JA_Auto_Git_v1.5.0_Windows_x64"
-xcopy /e /i /y /q "dist\*.*" "dist_pack\JA_Auto_Git_v1.5.0_Windows_x64\"
-powershell -Command "Compress-Archive -Path 'dist_pack\*' -DestinationPath 'dist\JA_Auto_Git_v1.5.0_Windows_x64.zip' -Force"
+mkdir "dist_pack\JA_Auto_Git_v1.6.0_Windows_x64"
+xcopy /e /i /y /q "dist\*.*" "dist_pack\JA_Auto_Git_v1.6.0_Windows_x64\"
+powershell -Command "Compress-Archive -Path 'dist_pack\*' -DestinationPath 'dist\JA_Auto_Git_v1.6.0_Windows_x64.zip' -Force"
 if exist "dist_pack" rmdir /s /q "dist_pack"
+
+echo.
+:: 6. Generate Release Notes for GitHub
+echo [6/6] Generating Release Notes...
+powershell -Command "$text = Get-Content CHANGELOG.md -Raw; $regex = '(?s)## \[v1\.6\.0\].*?(?=## \[v)'; if ($text -match $regex) { Set-Content -Path 'dist\RELEASE_NOTES.md' -Value ('TAG=v1.6.0' + [Environment]::NewLine + 'TITLE=Release v1.6.0' + [Environment]::NewLine + 'BODY=' + [Environment]::NewLine + $matches[0]) } else { Set-Content -Path 'dist\RELEASE_NOTES.md' -Value ('TAG=v1.6.0' + [Environment]::NewLine + 'TITLE=Release v1.6.0') }"
 
 echo.
 echo =======================================================================
@@ -88,6 +93,9 @@ echo The self-contained application with bin, assets ^& docs is ready in:
 echo %WORKSPACE_DIR%dist\
 echo.
 echo Standalone parent-folder ZIP package:
-echo %WORKSPACE_DIR%dist\JA_Auto_Git_v1.5.0_Windows_x64.zip
+echo %WORKSPACE_DIR%dist\JA_Auto_Git_v1.6.0_Windows_x64.zip
+echo Release Notes:
+echo %WORKSPACE_DIR%dist\RELEASE_NOTES.md
 echo.
 pause
+

@@ -9,8 +9,10 @@
   [![Flutter](https://img.shields.io/badge/Flutter-v3.29.0-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
   [![Dart](https://img.shields.io/badge/Dart-v3.7.0-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev)
   [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://microsoft.com/windows)
-  [![Release](https://img.shields.io/badge/Release-v1.5.0-00ADB5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jatechvn/JA_AUTO_GIT/releases)
+  [![Release](https://img.shields.io/badge/Release-v1.6.0-00ADB5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jatechvn/JA_AUTO_GIT/releases)
   [![License](https://img.shields.io/badge/License-MIT-FFB100?style=for-the-badge)](LICENSE)
+
+  <img src="assets/images/2026-07-30_004203.jpg" width="100%" alt="JA Auto Git Screenshot" />
 
   <p align="center">
     <b>Automate workspace scanning • Manage GitHub Cloud • Publish Rich Releases with Drag & Drop</b>
@@ -84,7 +86,7 @@
 JA_Auto_Git/
 ├── dist/                                  # Portable distribution folder
 │   ├── ja_auto_git.exe                   # Main production Windows executable
-│   ├── JA_Auto_Git_v1.5.0_Windows.zip    # Ready-to-publish release package
+│   ├── JA_Auto_Git_v1.6.0_Windows_x64.zip    # Ready-to-publish release package
 │   ├── Clone/                            # Dedicated sub-folder for cloned cloud repositories
 │   └── bin/                              # Portable embedded tools
 │       ├── git/                          # Portable Git 64-bit runtime
@@ -111,7 +113,7 @@ JA_Auto_Git/
 ## 🚀 Quick Start Guide
 
 ### Option A: Portable Run (No Installation Required)
-1. Download the latest release package `JA_Auto_Git_v1.5.0_Windows.zip` from [Releases](https://github.com/jatechvn/JA_AUTO_GIT/releases).
+1. Download the latest release package `JA_Auto_Git_v1.6.0_Windows_x64.zip` from [Releases](https://github.com/jatechvn/JA_AUTO_GIT/releases).
 2. Extract the archive to any location.
 3. Run `dist/ja_auto_git.exe`. Embedded `git.exe` and `gh.exe` binaries run out of the box!
 
@@ -162,6 +164,7 @@ The application persists user preferences in local JSON storage:
 
 Refer to [CHANGELOG.md](CHANGELOG.md) for full version history details.
 
+- **v1.6.0 (2026-07-30):** Automated Cloud fetching, redesigned Cloud DataTable UI, and integrated interactive Action Menu for full GitHub repo management (Settings, Visibility, Rename, Delete).
 - **v1.5.0 (2026-07-28):** Added GitHub Cloud Release publisher, Drag & Drop binary attachment zone, auto-version tag detection, account switching dialog, and Glassmorphism blur/opacity sliders.
 - **v1.0.0 (2026-07-26):** Initial Flutter/Dart architecture conversion and multi-repo workspace scanner.
 
