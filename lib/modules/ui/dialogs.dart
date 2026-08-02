@@ -388,7 +388,6 @@ class GithubAuthGuiDialog extends StatefulWidget {
 
 class _GithubAuthGuiDialogState extends State<GithubAuthGuiDialog> {
   String? _oneTimeCode;
-  bool _isAuthenticating = false;
   bool _hasError = false;
 
   @override
@@ -399,7 +398,6 @@ class _GithubAuthGuiDialogState extends State<GithubAuthGuiDialog> {
 
   Future<void> _startAuthProcess() async {
     setState(() {
-      _isAuthenticating = true;
       _hasError = false;
     });
 
@@ -417,7 +415,6 @@ class _GithubAuthGuiDialogState extends State<GithubAuthGuiDialog> {
       } else {
         setState(() {
           _hasError = true;
-          _isAuthenticating = false;
         });
       }
     }

@@ -65,9 +65,9 @@ class MainLogic extends ChangeNotifier {
       List<CloudProjectInfo> cloudList = [];
       for (var r in repos) {
         final repoName = r['name'] ?? '';
-        final htmlUrl = r['html_url'] ?? '';
+        final htmlUrl = r['url'] ?? '';
         final updatedAt = r['updated_at'] ?? '';
-        final isPrivate = r['private'] ?? false;
+        final isPrivate = r['is_private'] ?? false;
         
         final localPath = "$localRoot/$repoName";
         String syncStatus = "Not Cloned";

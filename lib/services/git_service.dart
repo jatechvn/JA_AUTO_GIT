@@ -289,8 +289,87 @@ class GitService {
     }
   }
 
+  /// Computes ahead/behind commit counts against the tracked remote branch using only
+  /// locally-cached refs (no `git fetch`), so it stays cheap enough to run on every scan.
+  /// Counts reflect state as of the last fetch/pull/push, not necessarily the live remote.
+  static Future<({int ahead, int behind})> getLocalAheadBehind(String path) async {
+    try {
+      final branch = await _gitOutput(path, ['branch', '--show-current']);
+      if (branch.isEmpty) return (ahead: 0, behind: 0);
+
+      final out = await _gitOutput(path, ['rev-list', '--left-right', '--count', '$branch...origin/$branch']);
+      if (out.isEmpty) return (ahead: 0, behind: 0);
+
+      final parts = out.split(RegExp(r'\s+'));
+      if (parts.length < 2) return (ahead: 0, behind: 0);
+
+      return (ahead: int.tryParse(parts[0]) ?? 0, behind: int.tryParse(parts[1]) ?? 0);
+    } catch (_) {
+      return (ahead: 0, behind: 0);
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getRemoteRepos(String owner, {String rootDir = '', void Function(String)? log}) async {
     return fetchCloudRepositories(owner, rootDir, log ?? (_) {});
+  }
+
+  static const String _repoSettingsFields =
+      'description,homepageUrl,defaultBranchRef,visibility,hasIssuesEnabled,hasWikiEnabled,hasProjectsEnabled,hasDiscussionsEnabled,deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed';
+
+  /// Fetches the full repository settings (General/Features/Pull Requests) for the Repository Settings dialog.
+  static Future<Map<String, dynamic>?> getRepoSettings(String owner, String repoName, {void Function(String)? log}) async {
+    final gh = findGhExecutable();
+    final fullName = "$owner/$repoName";
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+
+    log?.call("[INFO] Fetching repository settings for $fullName...\n");
+    final res = await Process.run(gh, ['repo', 'view', fullName, '--json', _repoSettingsFields], environment: env);
+    if (res.exitCode != 0) {
+      log?.call("[ERROR] Failed to fetch repository settings:\n${res.stderr}\n");
+      return null;
+    }
+
+    try {
+      return json.decode(res.stdout) as Map<String, dynamic>;
+    } catch (e) {
+      log?.call("[ERROR] Failed to parse repository settings: $e\n");
+      return null;
+    }
+  }
+
+  /// Applies only the changed fields from the Repository Settings dialog via `gh repo edit`.
+  static Future<bool> updateRepoSettings(
+    String owner,
+    String repoName,
+    Map<String, dynamic> changes,
+    void Function(String) log,
+  ) async {
+    if (changes.isEmpty) return true;
+
+    final gh = findGhExecutable();
+    final fullName = "$owner/$repoName";
+    final env = Map<String, String>.from(Platform.environment)..remove('GITHUB_TOKEN');
+
+    final List<String> args = ['repo', 'edit', fullName];
+    if (changes.containsKey('description')) args.addAll(['-d', changes['description']]);
+    if (changes.containsKey('homepageUrl')) args.addAll(['-h', changes['homepageUrl']]);
+    if (changes.containsKey('hasIssuesEnabled')) args.add('--enable-issues=${changes['hasIssuesEnabled']}');
+    if (changes.containsKey('hasWikiEnabled')) args.add('--enable-wiki=${changes['hasWikiEnabled']}');
+    if (changes.containsKey('hasProjectsEnabled')) args.add('--enable-projects=${changes['hasProjectsEnabled']}');
+    if (changes.containsKey('hasDiscussionsEnabled')) args.add('--enable-discussions=${changes['hasDiscussionsEnabled']}');
+    if (changes.containsKey('squashMergeAllowed')) args.add('--enable-squash-merge=${changes['squashMergeAllowed']}');
+    if (changes.containsKey('mergeCommitAllowed')) args.add('--enable-merge-commit=${changes['mergeCommitAllowed']}');
+    if (changes.containsKey('rebaseMergeAllowed')) args.add('--enable-rebase-merge=${changes['rebaseMergeAllowed']}');
+    if (changes.containsKey('deleteBranchOnMerge')) args.add('--delete-branch-on-merge=${changes['deleteBranchOnMerge']}');
+
+    log("\$ ${gh} ${args.join(' ')}\n");
+    final res = await Process.run(gh, args, environment: env);
+    if (res.exitCode != 0) {
+      log("[ERROR] Failed to update repository settings:\n${res.stderr}\n");
+      return false;
+    }
+    log("[OK] Repository settings updated for $fullName.\n");
+    return true;
   }
 
   static Future<bool> commitAndPushProject(
@@ -896,6 +975,18 @@ class GitService {
       log("[ERROR] Parse releases JSON: $e\n");
       return [];
     }
+  }
+
+  /// Returns the tag of the latest non-draft, non-prerelease GitHub release for the app's own
+  /// repo (used by the startup update checker), or empty string if unavailable.
+  static Future<String> getLatestReleaseTag(String owner, String repoName) async {
+    final releases = await getGithubReleases(owner, repoName, log: (_) {});
+    for (final r in releases) {
+      if (r['draft'] != true && r['prerelease'] != true) {
+        return (r['tag'] ?? '').toString();
+      }
+    }
+    return '';
   }
 
   static Future<bool> renameCloudRepo(

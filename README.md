@@ -9,7 +9,7 @@
   [![Flutter](https://img.shields.io/badge/Flutter-v3.29.0-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
   [![Dart](https://img.shields.io/badge/Dart-v3.7.0-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev)
   [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://microsoft.com/windows)
-  [![Release](https://img.shields.io/badge/Release-v1.6.0-00ADB5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jatechvn/JA_AUTO_GIT/releases)
+  [![Release](https://img.shields.io/badge/Release-v1.7.0-00ADB5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jatechvn/JA_AUTO_GIT/releases)
   [![License](https://img.shields.io/badge/License-MIT-FFB100?style=for-the-badge)](LICENSE)
 
   <img src="assets/images/2026-07-30_004203.jpg" width="100%" alt="JA Auto Git Screenshot" />
@@ -17,6 +17,8 @@
   <p align="center">
     <b>Automate workspace scanning • Manage GitHub Cloud • Publish Rich Releases with Drag & Drop</b>
   </p>
+
+  <p align="center">🇺🇸 English • <a href="i18n/README.vi.md">🇻🇳 Tiếng Việt</a> • <a href="i18n/README.zh-CN.md">🇨🇳 中文</a> • <a href="i18n/README.ja-JP.md">🇯🇵 日本語</a> • <a href="i18n/README.es.md">🇪🇸 Español</a> • <a href="i18n/README.fr.md">🇫🇷 Français</a> • <a href="i18n/README.de.md">🇩🇪 Deutsch</a> • <a href="i18n/README.ru.md">🇷🇺 Русский</a> • <a href="i18n/README.pt.md">🇵🇹 Português</a> • <a href="i18n/README.ko.md">🇰🇷 한국어</a></p>
 
   ---
 
@@ -43,12 +45,17 @@
 * **Instant Selection Reset:** Changing target folder automatically clears stale project selections to prevent accidental batch operations.
 * **Batch Git Standardization:** Instantly generates or updates standard project files (`.gitignore`, `LICENSE`, `README.md`, `git_push.bat`) across selected repos.
 * **Batch Commit & Push:** One-click automated staging, commit writing, and pushing to remote branches with automatic `pull --rebase` conflict prevention.
+* **Local Sync Indicator:** Per-project `↑ahead / ↓behind` badge computed from local refs only — no network calls during a scan.
+* **One-Click Health Check:** Click the "Standard Git Form" dashboard card to see every project missing a standard file and fix them all at once.
+* **In-App `.gitignore` Editor:** Read and edit a project's real `.gitignore` directly, with a "Reset to Standard" merge helper.
 
 ### 🌐 2. GitHub Cloud Management Suite
 * **Live Cloud Repositories:** Real-time fetching of all user and organizational repositories directly via embedded GitHub CLI (`gh.exe`).
 * **Multi-Account Switching:** Switch GitHub user accounts on the fly with custom device authentication popups (`Device Code Flow`).
 * **Structured Directory Allocation:** Automatically clones cloud repos directly into `dist/Clone/[RepoName]` without cluttering root directories.
 * **Safe Clone Deletion:** Includes read-only file lock clearing to safely delete downloaded clone folders directly from the app interface.
+* **In-App Repository Settings:** Edit description, website, features, and pull-request/merge options in a native dialog — no browser round-trip to GitHub's web settings.
+* **Startup Update Checker:** Compares the running version against the latest GitHub Release on launch and shows a dismissible banner when a newer build is available.
 
 ---
 
@@ -86,7 +93,7 @@
 JA_Auto_Git/
 ├── dist/                                  # Portable distribution folder
 │   ├── ja_auto_git.exe                   # Main production Windows executable
-│   ├── JA_Auto_Git_v1.6.0_Windows_x64.zip    # Ready-to-publish release package
+│   ├── JA_Auto_Git_v1.7.0_Windows_x64.zip    # Ready-to-publish release package
 │   ├── Clone/                            # Dedicated sub-folder for cloned cloud repositories
 │   └── bin/                              # Portable embedded tools
 │       ├── git/                          # Portable Git 64-bit runtime
@@ -113,7 +120,7 @@ JA_Auto_Git/
 ## 🚀 Quick Start Guide
 
 ### Option A: Portable Run (No Installation Required)
-1. Download the latest release package `JA_Auto_Git_v1.6.0_Windows_x64.zip` from [Releases](https://github.com/jatechvn/JA_AUTO_GIT/releases).
+1. Download the latest release package `JA_Auto_Git_v1.7.0_Windows_x64.zip` from [Releases](https://github.com/jatechvn/JA_AUTO_GIT/releases).
 2. Extract the archive to any location.
 3. Run `dist/ja_auto_git.exe`. Embedded `git.exe` and `gh.exe` binaries run out of the box!
 
@@ -164,6 +171,7 @@ The application persists user preferences in local JSON storage:
 
 Refer to [CHANGELOG.md](CHANGELOG.md) for full version history details.
 
+- **v1.7.0 (2026-08-02):** Push Release dialog, in-app Repository Settings, local sync (ahead/behind) indicator, dashboard scan deltas, Health Check panel, in-app `.gitignore` editor, startup update checker, and toast notifications.
 - **v1.6.0 (2026-07-30):** Automated Cloud fetching, redesigned Cloud DataTable UI, and integrated interactive Action Menu for full GitHub repo management (Settings, Visibility, Rename, Delete).
 - **v1.5.0 (2026-07-28):** Added GitHub Cloud Release publisher, Drag & Drop binary attachment zone, auto-version tag detection, account switching dialog, and Glassmorphism blur/opacity sliders.
 - **v1.0.0 (2026-07-26):** Initial Flutter/Dart architecture conversion and multi-repo workspace scanner.

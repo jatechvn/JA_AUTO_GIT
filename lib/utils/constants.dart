@@ -57,7 +57,9 @@ if (\$dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 class AppConstants {
   static const String appId = "JA_AUTO_GIT";
   static const String appName = "JA Auto Git";
-  static const String appVersion = "1.6.0";
+  static const String appVersion = "1.7.0";
+  static const String updateCheckOwner = "jatechvn";
+  static const String updateCheckRepo = "JA_AUTO_GIT";
   static const String appTitle = "JA AUTO GIT - LIQUID GLASS";
 
   static const double defaultWidth = 1220;
@@ -130,6 +132,15 @@ class AppConstants {
     "",
     "# License that should absolutely not be committed",
     "license.key",
+    "",
+    "# Large compressed archives & binaries",
+    "*.zip",
+    "*.rar",
+    "*.7z",
+    "*.tar",
+    "*.gz",
+    "*.exe",
+    "*.msi",
   ];
 
   static const List<String> pythonGitignoreLines = [

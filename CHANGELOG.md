@@ -4,6 +4,33 @@ All notable changes to **JA_Auto_Git** will be documented in this file.
 
 ---
 
+## [v1.7.0] - 2026-08-02
+
+### 🚀 Major Features & Enhancements
+- **🚀 Push Release Dialog:** New in-app dialog to tag, title, write notes, attach a binary asset, and publish a GitHub Release directly from a local project row.
+- **⚙️ In-App Repository Settings:** The Cloud tab's Settings action now opens a full native dialog (General description/website, Features, Pull Request merge options, Danger Zone visibility toggle) instead of opening the GitHub web settings page.
+- **🗂️ Cloud Row Actions Redesign:** Replaced the single "..." popup menu with dedicated icon buttons (Settings, Clone, Releases, Visibility, Rename, Delete) for faster access.
+- **🔍 Smarter Local Scanner:** Distinguishes "weak" project kinds (bare `.bat`/`.ps1`/`.ahk` folders) from "strong" kinds (Dart, Python, Node, etc.) so workspace root folders are no longer misclassified as leaf projects.
+- **📄 Dynamic README Structure Section:** The generated project structure tree now reflects the actual Dart project layout (`lib/models`, `lib/services`, `lib/widgets`) instead of always showing the Python layout.
+
+- **🔔 Toast Notifications:** Success/failure confirmations (Rename, Delete, Clone, Visibility, Push Release, Repository Settings, Commit & Push) now surface as snackbar toasts, not just the console log.
+- **🔄 Local Sync Column:** The Local Workspace table now shows an "↑ahead / ↓behind" indicator per project, computed from local refs only (no `git fetch` during scan, so scanning stays fast).
+- **📊 Scan Delta Indicators:** Dashboard stat cards show the +/- change since the previous scan.
+- **🩺 Health Check Panel:** Click the "Standard Git Form" stat card to see every project missing a standard file, with a one-click "Fix All".
+- **📝 In-App .gitignore Editor:** Edit a project's real `.gitignore` directly from the Local tab, with a "Reset to Standard" merge helper.
+- **🔔 Startup Update Checker:** The app checks its own GitHub Releases on launch and shows a dismissible banner when a newer version is available.
+- **💀 Cloud Loading Skeleton:** Replaced the spinner with pulsing placeholder rows while fetching cloud repositories.
+
+### 🛠️ Fixes
+- Fixed Cloud project `url`/`is_private` fields being read from the wrong JSON keys, which broke the repo link and Private/Public badge.
+
+### 🧹 Maintenance
+- Removed dead code: unused `lib/modules/constants.dart` and `lib/modules/modules.dart` (stale duplicates/barrel file with no importers), unused `_isAuthenticating` field.
+- `build_release.bat` now reads the app version from `pubspec.yaml` instead of a hard-coded string.
+- Added unit tests for the scanner's weak/strong project classification and the local ahead/behind computation.
+
+---
+
 ## [v1.6.0] - 2026-07-30
 
 ### 🚀 Major Features & Enhancements

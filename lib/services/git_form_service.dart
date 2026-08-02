@@ -67,17 +67,12 @@ class GitFormService {
     }
   }
 
-  static void ensureGitignore(String projectDir, String kind) {
-    final path = p.join(projectDir, '.gitignore');
-    final file = File(path);
-    final List<String> existing = [];
-
-    if (file.existsSync()) {
-      existing.addAll(file.readAsLinesSync());
-    }
-
-    final existingSet = existing.map((line) => line.trim()).toSet();
-    final List<String> merged = List.from(existing);
+  /// Merges the required template lines for [kind] into [existingLines], skipping any
+  /// non-comment line already present. Pure — does not touch disk, so it's safe to preview
+  /// against an in-memory editing buffer (e.g. the .gitignore editor dialog).
+  static List<String> mergeGitignoreLines(List<String> existingLines, String kind) {
+    final existingSet = existingLines.map((line) => line.trim()).toSet();
+    final List<String> merged = List.from(existingLines);
 
     if (merged.isNotEmpty && merged.last.trim().isNotEmpty) {
       merged.add("");
@@ -90,6 +85,15 @@ class GitFormService {
       merged.add(line);
     }
 
+    return merged;
+  }
+
+  static void ensureGitignore(String projectDir, String kind) {
+    final path = p.join(projectDir, '.gitignore');
+    final file = File(path);
+    final List<String> existing = file.existsSync() ? file.readAsLinesSync() : [];
+
+    final merged = mergeGitignoreLines(existing, kind);
     file.writeAsStringSync(merged.join('\n').trimRight() + '\n', flush: true);
   }
 
@@ -334,6 +338,50 @@ ${t['setup_run_run']}""";
       treeModules = "│   # ${t['struct_modules']}";
     }
 
+    
+    final String structureText;
+    if (kind == "dart") {
+      final srcDirDesc = lang != "vi" ? "Application source code" : "Thư mục chứa mã nguồn chính";
+      final entryDesc = lang != "vi" ? "Program entry point" : "Điểm khởi chạy ứng dụng";
+      final modelsDesc = lang != "vi" ? "Data models" : "Thư mục chứa các mô hình dữ liệu";
+      final servicesDesc = lang != "vi" ? "Business logic and APIs" : "Các dịch vụ xử lý logic chính";
+      final widgetsDesc = lang != "vi" ? "UI component widgets" : "Các widget giao diện người dùng";
+      final pubspecDesc = lang != "vi" ? "Flutter package dependencies and version" : "Cấu hình thư viện và phiên bản ứng dụng";
+
+      structureText = """$projectName/
+├── lib/                       # $srcDirDesc
+│   ├── main.dart              # $entryDesc
+│   ├── models/                # $modelsDesc
+│   ├── services/              # $servicesDesc
+│   └── widgets/               # $widgetsDesc
+├── assets/                    # ${t['struct_assets']}
+├── .gitignore                 # ${t['struct_gitignore']}
+├── README.md                  # ${t['struct_readme']}
+├── LICENSE                    # ${t['struct_license']}
+├── ABOUT.txt                  # ${t['struct_about']}
+├── git_push.bat               # ${t['struct_push_bat']}
+└── pubspec.yaml               # $pubspecDesc""";
+    } else {
+      structureText = """$projectName/
+├── main.py                    # ${t['struct_main']}
+├── run.bat                    # ${t['struct_run']}
+├── requirements.txt           # ${t['struct_req']}
+├── config.ini                 # ${t['struct_config_ini']}
+├── config.json                # ${t['struct_config_json']}
+├── .gitignore                 # ${t['struct_gitignore']}
+├── README.md                  # ${t['struct_readme']}
+├── LICENSE                    # ${t['struct_license']}
+├── ABOUT.txt                  # ${t['struct_about']}
+├── git_push.bat               # ${t['struct_push_bat']}
+│
+├── logs/                      # ${t['struct_logs']}
+│
+├── modules/                   # ${t['struct_modules']}
+$treeModules
+│
+└── assets/                    # ${t['struct_assets']}""";
+    }
+
     final langBar = generateLanguageBar(lang);
     final navQuick = t["nav_quick_start"] ?? "🚀 Quick Start";
     final navFeat = t["nav_features"] ?? "💡 Features";
@@ -375,24 +423,7 @@ ${t['intro_desc']}
 ## ${t['title_structure']}
 
 ```text
-$projectName/
-├── main.py                    # ${t['struct_main']}
-├── run.bat                    # ${t['struct_run']}
-├── requirements.txt           # ${t['struct_req']}
-├── config.ini                 # ${t['struct_config_ini']}
-├── config.json                # ${t['struct_config_json']}
-├── .gitignore                 # ${t['struct_gitignore']}
-├── README.md                  # ${t['struct_readme']}
-├── LICENSE                    # ${t['struct_license']}
-├── ABOUT.txt                  # ${t['struct_about']}
-├── git_push.bat               # ${t['struct_push_bat']}
-│
-├── logs/                      # ${t['struct_logs']}
-│
-├── modules/                   # ${t['struct_modules']}
-$treeModules
-│
-└── assets/                    # ${t['struct_assets']}
+$structureText
 ```
 
 ---

@@ -554,6 +554,58 @@ class CircularRevealClipper extends CustomClipper<Path> {
   }
 }
 
+/// Pulsing placeholder bar for loading-skeleton rows (e.g. Cloud tab while fetching)
+class SkeletonBar extends StatefulWidget {
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  const SkeletonBar({
+    super.key,
+    this.width = 120,
+    this.height = 12,
+    this.borderRadius = 4,
+  });
+
+  @override
+  State<SkeletonBar> createState() => _SkeletonBarState();
+}
+
+class _SkeletonBarState extends State<SkeletonBar> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.15, end: 0.4).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut)),
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: c.textMuted,
+          borderRadius: BorderRadius.circular(widget.borderRadius),
+        ),
+      ),
+    );
+  }
+}
+
 /// Reusable Glassmorphism Card with blur and thin border
 class GlassCard extends StatelessWidget {
   final Widget child;

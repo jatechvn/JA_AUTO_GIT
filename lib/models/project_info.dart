@@ -16,6 +16,8 @@ class ProjectInfo {
   final bool standardOk;
   final String status;
   final String version;
+  final int ahead;
+  final int behind;
 
   ProjectInfo({
     required this.name,
@@ -35,6 +37,8 @@ class ProjectInfo {
     required this.standardOk,
     required this.status,
     required this.version,
+    this.ahead = 0,
+    this.behind = 0,
   });
 
   factory ProjectInfo.fromJson(Map<String, dynamic> json) {
@@ -56,6 +60,8 @@ class ProjectInfo {
       standardOk: json['standard_ok'] ?? false,
       status: json['status'] ?? '',
       version: json['version'] ?? '',
+      ahead: json['ahead'] ?? 0,
+      behind: json['behind'] ?? 0,
     );
   }
 
@@ -78,6 +84,8 @@ class ProjectInfo {
       'standard_ok': standardOk,
       'status': status,
       'version': version,
+      'ahead': ahead,
+      'behind': behind,
     };
   }
 
@@ -99,6 +107,8 @@ class ProjectInfo {
     bool? standardOk,
     String? status,
     String? version,
+    int? ahead,
+    int? behind,
   }) {
     return ProjectInfo(
       name: name ?? this.name,
@@ -118,6 +128,8 @@ class ProjectInfo {
       standardOk: standardOk ?? this.standardOk,
       status: status ?? this.status,
       version: version ?? this.version,
+      ahead: ahead ?? this.ahead,
+      behind: behind ?? this.behind,
     );
   }
 }

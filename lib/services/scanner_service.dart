@@ -68,11 +68,24 @@ class ScannerService {
       }
     }
 
-    // If current directory is a project AND it has no child projects, then it's a leaf project!
-    if (currentKind != null && !hasChildProject) {
-      final info = await inspectProject(currentPath, currentKind);
-      projects.add(info);
-      return; // Stop scanning deeper into this project
+    final isWeakKind = currentKind == 'batch' || currentKind == 'powershell' || currentKind == 'ahk';
+
+    if (currentKind != null) {
+      if (!isWeakKind) {
+        // Strong project (dart, git, python, etc.): Add it and stop traversing its children 
+        // because we don't want to list its sub-components (like FFI rust folders) as separate projects.
+        final info = await inspectProject(currentPath, currentKind);
+        projects.add(info);
+        return;
+      } else {
+        // Weak project (just a folder with .bat or .ps1): Only add it if it's a leaf.
+        // If it contains other projects, it's likely a workspace root.
+        if (!hasChildProject) {
+          final info = await inspectProject(currentPath, currentKind);
+          projects.add(info);
+          return;
+        }
+      }
     }
 
     // Otherwise, traverse subdirectories to find projects
@@ -134,13 +147,21 @@ class ScannerService {
     String branch = '';
     String remoteUrl = '';
     bool clean = true;
+    int ahead = 0;
+    int behind = 0;
 
     if (hasGit) {
       branch = await _gitOutput(absPath, ['branch', '--show-current']);
       remoteUrl = await _gitOutput(absPath, ['remote', 'get-url', 'origin']);
-      
+
       final statusOut = await _gitOutput(absPath, ['status', '--short']);
       clean = statusOut.isEmpty;
+
+      if (remoteUrl.isNotEmpty) {
+        final syncCounts = await GitService.getLocalAheadBehind(absPath);
+        ahead = syncCounts.ahead;
+        behind = syncCounts.behind;
+      }
     }
 
     final hasGitignore = File(p.join(absPath, '.gitignore')).existsSync();
@@ -192,6 +213,8 @@ class ScannerService {
       standardOk: standardOk,
       status: status,
       version: version,
+      ahead: ahead,
+      behind: behind,
     );
   }
 

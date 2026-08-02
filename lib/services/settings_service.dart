@@ -86,6 +86,12 @@ class SettingsService {
       'bg_opacity': _safeDouble(data['bg_opacity'], 0.6),
       'dialog_blur': _safeDouble(data['dialog_blur'], 2.0),
       'dialog_opacity': _safeDouble(data['dialog_opacity'], 0.8),
+      'last_scan_total': _safeInt(data['last_scan_total'], -1),
+      'last_scan_git': _safeInt(data['last_scan_git'], -1),
+      'last_scan_standard': _safeInt(data['last_scan_standard'], -1),
+      'last_scan_dirty': _safeInt(data['last_scan_dirty'], -1),
+      'last_scan_cloud': _safeInt(data['last_scan_cloud'], -1),
+      'dismissed_update_version': data['dismissed_update_version'] ?? '',
     };
   }
 
@@ -111,6 +117,12 @@ class SettingsService {
     buffer.writeln('bg_opacity = ${settings['bg_opacity'] ?? 0.6}');
     buffer.writeln('dialog_blur = ${settings['dialog_blur'] ?? 2.0}');
     buffer.writeln('dialog_opacity = ${settings['dialog_opacity'] ?? 0.8}');
+    buffer.writeln('last_scan_total = ${settings['last_scan_total'] ?? -1}');
+    buffer.writeln('last_scan_git = ${settings['last_scan_git'] ?? -1}');
+    buffer.writeln('last_scan_standard = ${settings['last_scan_standard'] ?? -1}');
+    buffer.writeln('last_scan_dirty = ${settings['last_scan_dirty'] ?? -1}');
+    buffer.writeln('last_scan_cloud = ${settings['last_scan_cloud'] ?? -1}');
+    buffer.writeln('dismissed_update_version = ${settings['dismissed_update_version'] ?? ''}');
 
     try {
       file.writeAsStringSync(buffer.toString());
