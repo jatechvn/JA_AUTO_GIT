@@ -1,6 +1,7 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 
-/// Platform helper service providing OS interaction without native plugins
+/// Platform helper service providing OS interaction (URL opening, directory picking)
 class SystemService {
   /// Open a URL in default system browser
   static Future<bool> openUrl(String url) async {
@@ -22,27 +23,14 @@ class SystemService {
     return false;
   }
 
-  /// Open Windows FolderBrowserDialog to pick a directory path
-  static Future<String?> pickDirectory({String? description}) async {
-    if (!Platform.isWindows) return null;
-
+  /// Open the native OS folder picker to select a directory path
+  static Future<String?> pickDirectory({String? description, String? initialDirectory}) async {
     try {
-      final descStr = (description ?? 'Select Root Directory').replaceAll("'", "''");
-      final script =
-          "Add-Type -AssemblyName System.Windows.Forms; "
-          "\$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
-          "\$dialog.Description = '$descStr'; "
-          "if (\$dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output \$dialog.SelectedPath }";
-
-      final result = await Process.run('powershell', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        script,
-      ]);
-
-      final selectedPath = result.stdout.toString().trim();
-      if (selectedPath.isNotEmpty && Directory(selectedPath).existsSync()) {
+      final selectedPath = await FilePicker.getDirectoryPath(
+        dialogTitle: description ?? 'Select Root Directory',
+        initialDirectory: (initialDirectory != null && Directory(initialDirectory).existsSync()) ? initialDirectory : null,
+      );
+      if (selectedPath != null && Directory(selectedPath).existsSync()) {
         return selectedPath;
       }
     } catch (_) {}

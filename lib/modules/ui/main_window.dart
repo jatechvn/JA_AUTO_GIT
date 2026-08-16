@@ -45,6 +45,12 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
   String _currentLang = 'en';
   bool _showHidden = false;
 
+  // Column sorting state for the Local and Cloud DataTables.
+  int? _localSortColumnIndex;
+  bool _localSortAscending = true;
+  int? _cloudSortColumnIndex;
+  bool _cloudSortAscending = true;
+
   // Delta vs. the previous scan, shown under the dashboard stat cards. Null = no baseline yet.
   int? _deltaTotal;
   int? _deltaGit;
@@ -341,6 +347,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
         final htmlUrl = r['url'] ?? '';
         final updatedAt = r['updated_at'] ?? '';
         final isPrivate = r['is_private'] ?? false;
+        final version = r['version'] ?? '';
         final localPath = "$root/$name";
 
         String syncStatus = "Not Cloned";
@@ -364,6 +371,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
           localPath: localPath,
           syncStatus: syncStatus,
           isPrivate: isPrivate,
+          version: version,
         ));
       }
 
@@ -394,7 +402,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
   // Filtered Local Projects
   List<ProjectInfo> get _filteredLocalProjects {
-    return _localProjects.where((p) {
+    final list = _localProjects.where((p) {
       if (!_showHidden && _hiddenProjects.contains(p.path)) return false;
 
       // Category filter
@@ -416,6 +424,84 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
 
       return true;
     }).toList();
+
+    if (_localSortColumnIndex != null) {
+      list.sort((a, b) {
+        int cmp;
+        switch (_localSortColumnIndex) {
+          case 0:
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            break;
+          case 1:
+            cmp = a.kind.toLowerCase().compareTo(b.kind.toLowerCase());
+            break;
+          case 2:
+            cmp = a.branch.toLowerCase().compareTo(b.branch.toLowerCase());
+            break;
+          case 3:
+            cmp = (a.ahead + a.behind).compareTo(b.ahead + b.behind);
+            break;
+          case 4:
+            cmp = _compareVersions(a.version.isEmpty ? "1.0.0" : a.version, b.version.isEmpty ? "1.0.0" : b.version);
+            break;
+          case 5:
+            cmp = (a.standardOk ? 1 : 0).compareTo(b.standardOk ? 1 : 0);
+            break;
+          case 6:
+            cmp = (a.clean ? 1 : 0).compareTo(b.clean ? 1 : 0);
+            break;
+          default:
+            cmp = 0;
+        }
+        return _localSortAscending ? cmp : -cmp;
+      });
+    }
+
+    return list;
+  }
+
+  List<CloudProjectInfo> get _sortedCloudProjects {
+    final list = List<CloudProjectInfo>.from(_cloudProjects);
+    if (_cloudSortColumnIndex != null) {
+      list.sort((a, b) {
+        int cmp;
+        switch (_cloudSortColumnIndex) {
+          case 0:
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+            break;
+          case 1:
+            cmp = a.syncStatus.toLowerCase().compareTo(b.syncStatus.toLowerCase());
+            break;
+          case 2:
+            cmp = _compareVersions(a.version.isEmpty ? "0.0.0" : a.version, b.version.isEmpty ? "0.0.0" : b.version);
+            break;
+          case 3:
+            cmp = a.updatedAt.compareTo(b.updatedAt);
+            break;
+          case 4:
+            cmp = (a.isPrivate ? 1 : 0).compareTo(b.isPrivate ? 1 : 0);
+            break;
+          default:
+            cmp = 0;
+        }
+        return _cloudSortAscending ? cmp : -cmp;
+      });
+    }
+    return list;
+  }
+
+  /// Loose semver compare (`v1.10.0` > `v1.9.0`) with a plain string-compare fallback
+  /// for anything non-numeric, so the VERSION columns sort meaningfully, not lexically.
+  int _compareVersions(String a, String b) {
+    final partsA = a.replaceFirst(RegExp(r'^v'), '').split('.');
+    final partsB = b.replaceFirst(RegExp(r'^v'), '').split('.');
+    for (var i = 0; i < 3; i++) {
+      final av = i < partsA.length ? int.tryParse(partsA[i]) : null;
+      final bv = i < partsB.length ? int.tryParse(partsB[i]) : null;
+      if (av == null || bv == null) break;
+      if (av != bv) return av.compareTo(bv);
+    }
+    return a.compareTo(b);
   }
 
   // Stats calculation
@@ -472,55 +558,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
       ),
       child: Row(
         children: [
-          // App Brand & Logo
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppConstants.accentCyan.withOpacity(0.3), AppConstants.accentPurple.withOpacity(0.3)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppConstants.accentCyan.withOpacity(0.4)),
-              boxShadow: [
-                BoxShadow(color: AppConstants.accentCyan.withOpacity(0.2), blurRadius: 8),
-              ],
-            ),
-            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                AppConstants.appName,
-                style: TextStyle(
-                  color: _c.textPrimary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  fontFamily: AppConstants.fontPrimary,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              Row(
-                children: [
-                  BlinkingDot(size: 6, color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentGreen),
-                  const SizedBox(width: 6),
-                  Text(
-                    BuildInfo.badgeLabel,
-                    style: TextStyle(
-                      color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentCyan,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: AppConstants.fontMono,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          _buildBrandLogo(),
           const SizedBox(width: 16),
 
           // Right side (Tabs, View Mode, Settings, GITHUB, Lang) wrapped in scrollable view to prevent squeezing
@@ -532,180 +570,237 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Navigation Tabs
-                    SizedBox(
-                      width: 280,
-                      height: 32,
-                      child: TabBar(
-                        controller: _tabCtrl,
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicator: BoxDecoration(
-                          color: AppConstants.accentCyan.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
-                        ),
-                        labelColor: AppConstants.accentCyan,
-                        unselectedLabelColor: _c.textSecondary,
-                        labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                        tabs: [
-                          Tab(text: "🗂️ ${I18n.t(_currentLang, "tab_local")}"),
-                          Tab(text: "☁️ ${I18n.t(_currentLang, "tab_cloud")}"),
-                        ],
-                      ),
-                    ),
+                    _buildNavTabs(),
                     const SizedBox(width: 16),
-
-                    // View Mode Switcher
-                    IconButton(
-                      tooltip: _viewMode == ViewMode.table ? "Switch to Grid Cards" : "Switch to Compact Table",
-                      icon: Icon(
-                        _viewMode == ViewMode.table ? Icons.grid_view_rounded : Icons.table_rows_rounded,
-                        color: AppConstants.accentCyan,
-                        size: 18,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _viewMode = _viewMode == ViewMode.table ? ViewMode.grid : ViewMode.table;
-                        });
-                      },
-                    ),
-
-                    // Settings & User Guide Button
-                    IconButton(
-            tooltip: _currentLang == 'vi' ? "Cài đặt & Hướng dẫn (About)" : "Settings & Guide (About)",
-            icon: const Icon(
-              Icons.settings_rounded,
-              color: AppConstants.accentCyan,
-              size: 18,
-            ),
-            onPressed: () async {
-              final updated = await showDialog<bool>(
-                context: context,
-                builder: (_) => SettingsDialog(
-                  isDark: widget.themeNotifier.isDark,
-                  lang: _currentLang,
-                  settings: _settings,
-                ),
-              );
-              if (updated == true) {
-                _loadSettingsAndScan();
-              }
-            },
-          ),
-          const SizedBox(width: 4),
-
-          // Theme Switcher
-          IconButton(
-            tooltip: "Switch Theme (Light/Dark/Auto)",
-            icon: Icon(
-              widget.themeNotifier.mode == AppThemeMode.dark
-                  ? Icons.dark_mode_rounded
-                  : (widget.themeNotifier.mode == AppThemeMode.light ? Icons.light_mode_rounded : Icons.brightness_auto_rounded),
-              color: _c.textPrimary,
-              size: 18,
-            ),
-            onPressed: () => widget.themeNotifier.cycleTheme(),
-          ),
-
-          // GitHub Auth Status & Account Switcher
-          Tooltip(
-            message: _isGithubLoggedIn 
-                ? (_currentLang == 'vi' ? "Tài khoản GitHub (Nhấn để quản lý / đăng xuất)" : "GitHub Account (Click to manage / logout)") 
-                : (_currentLang == 'vi' ? "Chưa đăng nhập GitHub (Nhấn để đăng nhập)" : "GitHub Not Logged In (Click to login)"),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () async {
-                if (!_isGithubLoggedIn) {
-                  await _ensureGithubAuth();
-                } else {
-                  final info = await GitService.getGithubAccountInfo();
-                  if (!mounted) return;
-                  final action = await showDialog<String>(
-                    context: context,
-                    builder: (_) => GithubAccountDialog(
-                      isDark: widget.themeNotifier.isDark,
-                      lang: _currentLang,
-                      accountInfo: info,
-                    ),
-                  );
-                  if (action == 'logout' || action == 'switch') {
-                    setState(() {
-                      _isGithubLoggedIn = false;
-                    });
-                    _addLog(_currentLang == 'vi' ? "Đã đăng xuất GitHub." : "Logged out from GitHub.", level: 'INFO');
-                    if (action == 'switch') {
-                      await _ensureGithubAuth();
-                    }
-                  }
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _c.bgTertiary,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _isGithubLoggedIn ? AppConstants.accentGreen.withOpacity(0.5) : _c.borderDefault),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _isGithubLoggedIn ? Icons.check_circle : Icons.cancel,
-                      color: _isGithubLoggedIn ? AppConstants.accentGreen : Colors.redAccent,
-                      size: 14,
-                    ),
+                    _buildViewModeToggle(),
+                    _buildSettingsButton(),
                     const SizedBox(width: 4),
-                    Text(
-                      "GITHUB",
-                      style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
+                    _buildThemeSwitcher(),
+                    _buildGithubAccountSwitcher(),
+                    const SizedBox(width: 8),
+                    _buildLanguageSwitcher(),
                   ],
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
 
-          // Language Cycle Switcher
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () {
-              setState(() {
-                if (_currentLang == 'en') {
-                  _currentLang = 'vi';
-                } else if (_currentLang == 'vi') {
-                  _currentLang = 'zh-cn';
-                } else {
-                  _currentLang = 'en';
-                }
-                _statusMessage = I18n.t(_currentLang, "status_waiting");
-                SettingsService.saveSettings({'last_lang': _currentLang});
-              });
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _c.bgTertiary,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: _c.borderDefault),
+  Widget _buildBrandLogo() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppConstants.accentCyan.withOpacity(0.3), AppConstants.accentPurple.withOpacity(0.3)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppConstants.accentCyan.withOpacity(0.4)),
+            boxShadow: [
+              BoxShadow(color: AppConstants.accentCyan.withOpacity(0.2), blurRadius: 8),
+            ],
+          ),
+          child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              AppConstants.appName,
+              style: TextStyle(
+                color: _c.textPrimary,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+                fontFamily: AppConstants.fontPrimary,
+                letterSpacing: 0.5,
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.language, size: 14, color: AppConstants.accentCyan),
-                  const SizedBox(width: 4),
-                  Text(
-                    (_currentLang == 'zh-cn' ? 'ZH' : _currentLang).toUpperCase(),
-                    style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold),
+            ),
+            Row(
+              children: [
+                BlinkingDot(size: 6, color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentGreen),
+                const SizedBox(width: 6),
+                Text(
+                  BuildInfo.badgeLabel,
+                  style: TextStyle(
+                    color: BuildInfo.isDebug ? Colors.amber : AppConstants.accentCyan,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: AppConstants.fontMono,
                   ),
-                  ],
-              ),
-            ),
-          ),
-                  ],
                 ),
-              ),
+              ],
             ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNavTabs() {
+    return SizedBox(
+      width: 280,
+      height: 32,
+      child: TabBar(
+        controller: _tabCtrl,
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: AppConstants.accentCyan.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppConstants.accentCyan.withOpacity(0.5)),
+        ),
+        labelColor: AppConstants.accentCyan,
+        unselectedLabelColor: _c.textSecondary,
+        labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+        tabs: [
+          Tab(text: "🗂️ ${I18n.t(_currentLang, "tab_local")}"),
+          Tab(text: "☁️ ${I18n.t(_currentLang, "tab_cloud")}"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewModeToggle() {
+    return IconButton(
+      tooltip: _viewMode == ViewMode.table ? "Switch to Grid Cards" : "Switch to Compact Table",
+      icon: Icon(
+        _viewMode == ViewMode.table ? Icons.grid_view_rounded : Icons.table_rows_rounded,
+        color: AppConstants.accentCyan,
+        size: 18,
+      ),
+      onPressed: () {
+        setState(() {
+          _viewMode = _viewMode == ViewMode.table ? ViewMode.grid : ViewMode.table;
+        });
+      },
+    );
+  }
+
+  Widget _buildSettingsButton() {
+    return IconButton(
+      tooltip: _currentLang == 'vi' ? "Cài đặt & Hướng dẫn (About)" : "Settings & Guide (About)",
+      icon: const Icon(Icons.settings_rounded, color: AppConstants.accentCyan, size: 18),
+      onPressed: () async {
+        final updated = await showDialog<bool>(
+          context: context,
+          builder: (_) => SettingsDialog(
+            isDark: widget.themeNotifier.isDark,
+            lang: _currentLang,
+            settings: _settings,
           ),
+        );
+        if (updated == true) {
+          _loadSettingsAndScan();
+        }
+      },
+    );
+  }
+
+  Widget _buildThemeSwitcher() {
+    return IconButton(
+      tooltip: "Switch Theme (Light/Dark/Auto)",
+      icon: Icon(
+        widget.themeNotifier.mode == AppThemeMode.dark
+            ? Icons.dark_mode_rounded
+            : (widget.themeNotifier.mode == AppThemeMode.light ? Icons.light_mode_rounded : Icons.brightness_auto_rounded),
+        color: _c.textPrimary,
+        size: 18,
+      ),
+      onPressed: () => widget.themeNotifier.cycleTheme(),
+    );
+  }
+
+  Widget _buildGithubAccountSwitcher() {
+    return Tooltip(
+      message: _isGithubLoggedIn
+          ? (_currentLang == 'vi' ? "Tài khoản GitHub (Nhấn để quản lý / đăng xuất)" : "GitHub Account (Click to manage / logout)")
+          : (_currentLang == 'vi' ? "Chưa đăng nhập GitHub (Nhấn để đăng nhập)" : "GitHub Not Logged In (Click to login)"),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: _onGithubAccountTap,
+        child: _buildPillBadge(
+          icon: _isGithubLoggedIn ? Icons.check_circle : Icons.cancel,
+          iconColor: _isGithubLoggedIn ? AppConstants.accentGreen : Colors.redAccent,
+          label: "GITHUB",
+          borderColor: _isGithubLoggedIn ? AppConstants.accentGreen.withOpacity(0.5) : _c.borderDefault,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onGithubAccountTap() async {
+    if (!_isGithubLoggedIn) {
+      await _ensureGithubAuth();
+      return;
+    }
+    final info = await GitService.getGithubAccountInfo();
+    if (!mounted) return;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (_) => GithubAccountDialog(
+        isDark: widget.themeNotifier.isDark,
+        lang: _currentLang,
+        accountInfo: info,
+      ),
+    );
+    if (action == 'logout' || action == 'switch') {
+      setState(() {
+        _isGithubLoggedIn = false;
+      });
+      _addLog(_currentLang == 'vi' ? "Đã đăng xuất GitHub." : "Logged out from GitHub.", level: 'INFO');
+      if (action == 'switch') {
+        await _ensureGithubAuth();
+      }
+    }
+  }
+
+  Widget _buildLanguageSwitcher() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () {
+        setState(() {
+          if (_currentLang == 'en') {
+            _currentLang = 'vi';
+          } else if (_currentLang == 'vi') {
+            _currentLang = 'zh-cn';
+          } else {
+            _currentLang = 'en';
+          }
+          _statusMessage = I18n.t(_currentLang, "status_waiting");
+          SettingsService.saveSettings({'last_lang': _currentLang});
+        });
+      },
+      child: _buildPillBadge(
+        icon: Icons.language,
+        iconColor: AppConstants.accentCyan,
+        label: (_currentLang == 'zh-cn' ? 'ZH' : _currentLang).toUpperCase(),
+        borderColor: _c.borderDefault,
+      ),
+    );
+  }
+
+  Widget _buildPillBadge({required IconData icon, required Color iconColor, required String label, required Color borderColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _c.bgTertiary,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: iconColor, size: 14),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: _c.textPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -843,7 +938,7 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.folder, size: 14, color: AppConstants.accentCyan),
                         onPressed: () async {
-                          final selected = await SystemService.pickDirectory();
+                          final selected = await SystemService.pickDirectory(initialDirectory: _rootCtrl.text.trim());
                           if (selected != null) {
                             setState(() {
                               _rootCtrl.text = selected;
@@ -1055,14 +1150,58 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 headingRowHeight: 36,
                 dataRowHeight: 40,
                 columnSpacing: 24,
+                sortColumnIndex: _localSortColumnIndex,
+                sortAscending: _localSortAscending,
                 columns: [
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[1].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[4].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text((_currentLang == 'vi' ? "ĐỒNG BỘ" : "SYNC"), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[2].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[1].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[4].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text((_currentLang == 'vi' ? "ĐỒNG BỘ" : "SYNC"), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[2].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.t(_currentLang, "grp_standard").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _localSortColumnIndex = i;
+                      _localSortAscending = asc;
+                    }),
+                  ),
                   DataColumn(label: Text(I18n.t(_currentLang, "btn_more").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
                 ],
                 rows: projects.map((proj) {
@@ -1322,6 +1461,8 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
           const SizedBox(width: 32),
           const SkeletonBar(width: 90, height: 14),
           const SizedBox(width: 32),
+          const SkeletonBar(width: 50, height: 14),
+          const SizedBox(width: 32),
           const SkeletonBar(width: 70, height: 14),
           const SizedBox(width: 32),
           const SkeletonBar(width: 60, height: 14),
@@ -1383,14 +1524,47 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                 headingRowHeight: 36,
                 dataRowHeight: 48,
                 columnSpacing: 24,
+                sortColumnIndex: _cloudSortColumnIndex,
+                sortAscending: _cloudSortAscending,
                 columns: [
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(isVi ? "CẬP NHẬT" : "UPDATED", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                  DataColumn(label: Text(isVi ? "QUYỀN" : "VISIBILITY", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[0].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _cloudSortColumnIndex = i;
+                      _cloudSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(I18n.translateList(_currentLang, "tree_headers")[11].toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _cloudSortColumnIndex = i;
+                      _cloudSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(isVi ? "PHIÊN BẢN" : "VERSION", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _cloudSortColumnIndex = i;
+                      _cloudSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(isVi ? "CẬP NHẬT" : "UPDATED", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _cloudSortColumnIndex = i;
+                      _cloudSortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: Text(isVi ? "QUYỀN" : "VISIBILITY", style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                    onSort: (i, asc) => setState(() {
+                      _cloudSortColumnIndex = i;
+                      _cloudSortAscending = asc;
+                    }),
+                  ),
                   DataColumn(label: Text((isVi ? "CHỨC NĂNG" : "ACTIONS").toUpperCase(), style: TextStyle(color: _c.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
                 ],
-                rows: _cloudProjects.map((cp) {
+                rows: _sortedCloudProjects.map((cp) {
                   return DataRow(
                     cells: [
                       DataCell(
@@ -1413,6 +1587,12 @@ class _MainWindowState extends State<MainWindow> with SingleTickerProviderStateM
                             ),
                             child: Text(cp.syncStatus, style: const TextStyle(color: AppConstants.accentCyan, fontSize: 9, fontWeight: FontWeight.bold)),
                           ),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          cp.version.isEmpty ? '—' : cp.version,
+                          style: TextStyle(color: cp.version.isEmpty ? _c.textMuted : _c.textSecondary, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
                       DataCell(

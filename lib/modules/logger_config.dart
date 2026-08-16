@@ -17,7 +17,22 @@ class LoggerConfig {
         logDir.createSync(recursive: true);
       }
       _logFile = File('logs/$dateStr.log');
+      _rotateOldLogs(logDir, now);
       log("Logger initialized (DebugMode: $isDebugMode)", level: 'SYSTEM');
+    } catch (_) {}
+  }
+
+  /// Deletes daily log files older than 7 days so `logs/` doesn't grow forever.
+  static void _rotateOldLogs(Directory logDir, DateTime now) {
+    const maxAgeDays = 7;
+    try {
+      for (final entity in logDir.listSync()) {
+        if (entity is! File || !entity.path.endsWith('.log')) continue;
+        final ageDays = now.difference(entity.statSync().modified).inDays;
+        if (ageDays > maxAgeDays) {
+          entity.deleteSync();
+        }
+      }
     } catch (_) {}
   }
 

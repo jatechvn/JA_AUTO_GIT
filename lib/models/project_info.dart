@@ -142,6 +142,7 @@ class CloudProjectInfo {
   final String localPath;
   final String syncStatus; // Not Cloned, Needs Pull, Up to date, Local Modified
   final bool isPrivate;
+  final String version; // Latest GitHub Release tag, or '' if none published
 
   CloudProjectInfo({
     required this.name,
@@ -151,6 +152,7 @@ class CloudProjectInfo {
     required this.localPath,
     required this.syncStatus,
     required this.isPrivate,
+    this.version = '',
   });
 
   factory CloudProjectInfo.fromJson(Map<String, dynamic> json) {
@@ -162,6 +164,7 @@ class CloudProjectInfo {
       localPath: json['local_path'] ?? '',
       syncStatus: json['sync_status'] ?? 'Not Cloned',
       isPrivate: json['is_private'] ?? true,
+      version: json['version'] ?? '',
     );
   }
 
@@ -174,6 +177,7 @@ class CloudProjectInfo {
       'local_path': localPath,
       'sync_status': syncStatus,
       'is_private': isPrivate,
+      'version': version,
     };
   }
 
@@ -185,6 +189,7 @@ class CloudProjectInfo {
     String? localPath,
     String? syncStatus,
     bool? isPrivate,
+    String? version,
   }) {
     return CloudProjectInfo(
       name: name ?? this.name,
@@ -194,6 +199,7 @@ class CloudProjectInfo {
       localPath: localPath ?? this.localPath,
       syncStatus: syncStatus ?? this.syncStatus,
       isPrivate: isPrivate ?? this.isPrivate,
+      version: version ?? this.version,
     );
   }
 }

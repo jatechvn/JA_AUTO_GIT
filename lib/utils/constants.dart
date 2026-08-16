@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 
 /// Helper function to open URLs in default web browser reliably across all platforms
@@ -16,41 +15,6 @@ Future<void> openUrlHelper(String url) async {
   } catch (e) {
     debugPrint('openUrlHelper error: $e');
   }
-}
-
-/// Helper function to pick a directory path using Windows PowerShell FolderBrowserDialog
-Future<String?> pickDirectoryPath({String? initialDirectory}) async {
-  if (Platform.isWindows) {
-    try {
-      final initialPath = (initialDirectory != null && initialDirectory.trim().isNotEmpty && Directory(initialDirectory.trim()).existsSync())
-          ? initialDirectory.trim().replaceAll("'", "''")
-          : '';
-      final psScript = '''
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-\$OutputEncoding = [System.Text.Encoding]::UTF8
-[System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
-\$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-if ('$initialPath' -ne '' -and (Test-Path -LiteralPath '$initialPath')) { \$dialog.SelectedPath = '$initialPath' }
-if (\$dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Out.Write(\$dialog.SelectedPath)
-}
-''';
-      final res = await Process.run(
-        'powershell',
-        ['-NoProfile', '-Command', psScript],
-        stdoutEncoding: utf8,
-      );
-      if (res.exitCode == 0) {
-        final out = res.stdout.toString().trim();
-        if (out.isNotEmpty && Directory(out).existsSync()) {
-          return out;
-        }
-      }
-    } catch (e) {
-      debugPrint('PowerShell directory picker fallback error: $e');
-    }
-  }
-  return null;
 }
 
 

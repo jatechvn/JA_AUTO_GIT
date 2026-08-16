@@ -581,7 +581,7 @@ class _SettingsDialogState extends State<SettingsDialog> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this, initialIndex: 2);
     _authorCtrl = TextEditingController(text: widget.settings['license_author'] ?? 'John Alaa');
     _ownerCtrl = TextEditingController(text: widget.settings['remote_base'] ?? '');
     _maxDepth = widget.settings['max_depth'] ?? 3;

@@ -763,6 +763,8 @@ class GitService {
           }
         }
 
+        final latestTag = await getLatestReleaseTag(owner, name);
+
         cloudProjects.add({
           "name": name,
           "kind": kind,
@@ -771,6 +773,7 @@ class GitService {
           "local_path": localPath,
           "sync_status": syncStatus,
           "is_private": repo['isPrivate'] ?? true,
+          "version": latestTag,
         });
       }
       return cloudProjects;
